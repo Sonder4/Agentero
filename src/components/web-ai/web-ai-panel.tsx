@@ -15,6 +15,8 @@ export function WebAiPanel() {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const [providers, setProviders] = useState<WebAiProvider[]>([]);
 	const [providerId, setProviderId] = useState("chatgpt");
+	const providerIdRef = useRef(providerId);
+	providerIdRef.current = providerId;
 	const [status, setStatus] = useState<WebAiStatus | null>(null);
 	const [text, setText] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export function WebAiPanel() {
 	useEffect(() => {
 		if (!isTauri() || mobileOnly || !hostRef.current) return;
 		const host = hostRef.current;
+		const currentProviderId = providerIdRef.current;
 		let frame = 0;
 		const publish = () => {
 			frame = 0;
@@ -49,7 +52,7 @@ export function WebAiPanel() {
 			const scale = window.devicePixelRatio || 1;
 			void callApiResult(() =>
 				commands.webAiSetBounds({
-					providerId,
+					providerId: currentProviderId,
 					bounds: {
 						x: rect.left,
 						y: rect.top,
@@ -68,11 +71,12 @@ export function WebAiPanel() {
 		return () => {
 			observer.disconnect();
 			if (frame) cancelAnimationFrame(frame);
+			const closingId = providerIdRef.current;
 			void callApiResult(() =>
-				commands.webAiView({ providerId, visible: false }),
+				commands.webAiView({ providerId: closingId, visible: false }),
 			).catch(() => undefined);
 		};
-	}, [mobileOnly, providerId]);
+	}, [mobileOnly]);
 
 	const boundsForHost = () => {
 		const host = hostRef.current;

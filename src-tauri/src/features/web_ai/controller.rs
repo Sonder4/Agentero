@@ -183,7 +183,9 @@ impl WebAiController {
                     url,
                 )
             })
-            .on_new_window(move |url, _features| open_auth_popup(&popup_app, &popup_id, url));
+            .on_new_window(move |url, features| {
+                open_auth_popup(&popup_app, &popup_id, url, features)
+            });
 
         let initial_bounds = bounds.unwrap_or(WebAiBounds {
             x: 0.0,
@@ -210,6 +212,8 @@ impl WebAiController {
                 let navigation_controller = std::sync::Arc::clone(self);
                 let navigation_app = app.clone();
                 let navigation_nonce = nonce.clone();
+                let popup_app = app.clone();
+                let popup_id = id.clone();
                 let window =
                     WebviewWindow::builder(app, fallback_label, WebviewUrl::External(fallback_url))
                         .data_directory(profile)
@@ -227,6 +231,9 @@ impl WebAiController {
                                 &navigation_nonce,
                                 url,
                             )
+                        })
+                        .on_new_window(move |url, features| {
+                            open_auth_popup(&popup_app, &popup_id, url, features)
                         })
                         .build()
                         .map_err(|e| e.to_string())?;
@@ -426,16 +433,24 @@ fn open_auth_popup(
     app: &AppHandle,
     provider_id: &str,
     url: Url,
+    features: tauri::webview::NewWindowFeatures,
 ) -> tauri::webview::NewWindowResponse<Wry> {
     if !providers::is_provider_navigation_url(provider_id, url.as_str()) {
         return tauri::webview::NewWindowResponse::Deny;
     }
     let label = format!("web-ai-auth-{}-{}", provider_id, Uuid::new_v4().simple());
-    match WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title("Web AI")
-        .inner_size(520.0, 720.0)
-        .build()
+        .inner_size(520.0, 720.0);
+    #[cfg(windows)]
     {
+        builder = builder.with_environment(features.opener().environment.clone());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = features;
+    }
+    match builder.build() {
         Ok(window) => tauri::webview::NewWindowResponse::Create { window },
         Err(error) => {
             log::warn!(target: "agentero::web_ai", "auth popup failed for {provider_id}: {error}");
