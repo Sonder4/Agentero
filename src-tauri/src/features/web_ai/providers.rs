@@ -1,8 +1,7 @@
 //! Declarative provider registry and URL policy.
 //!
 //! This is the Rust counterpart of PaperReader's provider table.  DOM
-//! selectors stay out of the host contract: selectors belong to a future,
-//! provider-specific page bridge and are not exposed to remote origins.
+//! selectors stay inside the host bridge and are not returned to the renderer.
 
 use super::models::{WebAiCapabilities, WebAiProvider};
 use url::Url;
@@ -15,6 +14,8 @@ pub struct ProviderDefinition {
     pub origins: &'static [&'static str],
     pub auth_origins: &'static [&'static str],
     pub conversation_marker: &'static str,
+    pub composer_selectors: &'static [&'static str],
+    pub attachment_selectors: &'static [&'static str],
     pub capabilities: WebAiCapabilities,
 }
 
@@ -26,6 +27,8 @@ const PROVIDERS: &[ProviderDefinition] = &[
         origins: &["chatgpt.com"],
         auth_origins: &["auth.openai.com"],
         conversation_marker: "/c/",
+        composer_selectors: &["#prompt-textarea", "textarea", "[contenteditable='true']"],
+        attachment_selectors: &["input[type='file']"],
         capabilities: WebAiCapabilities {
             text: true,
             image: true,
@@ -42,6 +45,11 @@ const PROVIDERS: &[ProviderDefinition] = &[
         origins: &["gemini.google.com"],
         auth_origins: &["accounts.google.com"],
         conversation_marker: "/app/",
+        composer_selectors: &[
+            "rich-textarea [contenteditable='true']",
+            "[contenteditable='true']",
+        ],
+        attachment_selectors: &["input[type='file']"],
         capabilities: WebAiCapabilities {
             text: true,
             image: true,
@@ -58,6 +66,8 @@ const PROVIDERS: &[ProviderDefinition] = &[
         origins: &["chat.deepseek.com"],
         auth_origins: &["chat.deepseek.com"],
         conversation_marker: "/a/chat/s/",
+        composer_selectors: &["textarea", "[contenteditable='true']"],
+        attachment_selectors: &["input[type='file']"],
         capabilities: WebAiCapabilities {
             text: true,
             image: true,
@@ -74,6 +84,8 @@ const PROVIDERS: &[ProviderDefinition] = &[
         origins: &["www.kimi.com", "kimi.com"],
         auth_origins: &["www.kimi.com", "kimi.com", "accounts.kimi.com"],
         conversation_marker: "/chat/",
+        composer_selectors: &["textarea", "[contenteditable='true']"],
+        attachment_selectors: &["input[type='file']"],
         capabilities: WebAiCapabilities {
             text: true,
             image: true,
@@ -90,6 +102,8 @@ const PROVIDERS: &[ProviderDefinition] = &[
         origins: &["chat.z.ai"],
         auth_origins: &["chat.z.ai", "open.bigmodel.cn"],
         conversation_marker: "/c/",
+        composer_selectors: &["textarea", "[contenteditable='true']"],
+        attachment_selectors: &["input[type='file']"],
         capabilities: WebAiCapabilities {
             text: true,
             image: true,

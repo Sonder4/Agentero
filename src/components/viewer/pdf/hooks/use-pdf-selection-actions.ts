@@ -22,11 +22,18 @@ import {
 	openSelectionChat,
 	selectionChatStore,
 } from "@/lib/agent/selection-chat-store";
+import { commands } from "@/lib/core/bindings";
+import { callApiResult } from "@/lib/core/ipc";
+import { notifyError } from "@/lib/core/notify";
 import type { PdfAskAnchor } from "@/lib/pdf/ask/types";
 import {
 	DEFAULT_HIGHLIGHT_COLOR,
 	type HighlightColor,
 } from "@/lib/pdf/highlight/palette";
+import {
+	setRightSidebarOpenState,
+	setRightSidebarTab,
+} from "@/lib/shell/ui-store";
 
 type SelectionCapabilityProvides = ReturnType<
 	typeof useSelectionCapability
@@ -75,6 +82,7 @@ export type PdfSelectionActions = {
 	) => void;
 	handleMenuAsk: () => void;
 	handleMenuAddToChat: () => void;
+	handleMenuWebAi: () => void;
 	handleMenuTranslate: () => void;
 };
 
@@ -197,11 +205,39 @@ export function usePdfSelectionActions({
 		translateSelection(anchor);
 	}, [selectionCap, docId, setSelectionMenu, translateSelection]);
 
+	const handleMenuWebAi = useCallback(() => {
+		const menu = selectionMenuRef.current;
+		const quote = menu?.anchor.quote?.trim();
+		const page = menu?.anchor.page;
+		if (!quote) return;
+		setSelectionMenu(null);
+		void callApiResult(() =>
+			commands.webAiTransferSelection({
+				providerId: "chatgpt",
+				text: quote,
+				paperId: null,
+				page: page ?? null,
+			}),
+		)
+			.then((result) => {
+				if (!result.draftReady) {
+					notifyError(result.message ?? "Web AI");
+					return;
+				}
+				setRightSidebarTab("web-ai");
+				setRightSidebarOpenState(true);
+			})
+			.catch((error: unknown) => {
+				notifyError(error instanceof Error ? error.message : String(error));
+			});
+	}, [setSelectionMenu]);
+
 	return {
 		handleHighlight,
 		handleCommitSelectionNote,
 		handleMenuAsk,
 		handleMenuAddToChat,
+		handleMenuWebAi,
 		handleMenuTranslate,
 	};
 }

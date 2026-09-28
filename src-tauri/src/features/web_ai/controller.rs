@@ -158,7 +158,12 @@ impl WebAiController {
         let navigation_controller = std::sync::Arc::clone(self);
         let navigation_app = app.clone();
         let navigation_nonce = nonce.clone();
-        let script = bootstrap_script(&id, &nonce);
+        let script = bootstrap_script(
+            &id,
+            &nonce,
+            provider.composer_selectors,
+            provider.attachment_selectors,
+        );
         let builder = tauri::WebviewBuilder::new(label.clone(), WebviewUrl::External(url))
             .data_directory(profile.clone())
             .focused(false)
@@ -201,7 +206,12 @@ impl WebAiController {
                 let window =
                     WebviewWindow::builder(app, fallback_label, WebviewUrl::External(fallback_url))
                         .data_directory(profile)
-                        .initialization_script(bootstrap_script(&id, &nonce))
+                        .initialization_script(bootstrap_script(
+                            &id,
+                            &nonce,
+                            provider.composer_selectors,
+                            provider.attachment_selectors,
+                        ))
                         .on_navigation(move |url| {
                             handle_navigation(
                                 &navigation_app,

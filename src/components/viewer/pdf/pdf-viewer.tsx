@@ -1173,6 +1173,7 @@ function PdfViewerInner({
 		handleCommitSelectionNote,
 		handleMenuAsk,
 		handleMenuAddToChat,
+		handleMenuWebAi,
 		handleMenuTranslate,
 	} = usePdfSelectionActions({
 		selectionMenu,
@@ -1701,6 +1702,7 @@ function PdfViewerInner({
 						onHighlight: handleHighlight,
 						onAsk: handleMenuAsk,
 						onAddToChat: handleMenuAddToChat,
+						onWebAi: handleMenuWebAi,
 						onTranslate: handleMenuTranslate,
 						showHighlight: !isRemotePaper && !plainViewer,
 						showTranslate: !isRemotePaper && !plainViewer,

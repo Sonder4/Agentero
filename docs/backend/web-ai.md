@@ -13,7 +13,13 @@ Agentero 的 Web AI 集成位于 `features/web_ai`，与普通论文网页代理
 
 每个 WebView 使用随机 nonce 和 provider origin 白名单。Host 只注入有限的 `appendText` 与分块附件接口；页面事件必须同时通过 WebView provider、nonce、事件类型和 64 KiB 大小校验。页面不能调用 `__TAURI_INTERNALS__`，也不能继承主窗口的文件系统、Shell、Dialog、Vault 或 MCP 权限。
 
-文本追加和附件准备都只修改 provider 的 composer，返回结果中的 `requiresSend` 永远为 `true`。Agentero 不调用远程页面的发送按钮。若 provider 拒绝脚本生成的文件事件，后续桥实现应发出手动选择文件回退状态。
+文本追加使用 provider registry 中的 composer 选择器，只追加草稿。附件准备失败或 WebView 未打开时返回 `manualFile`，scratch 文件保留给用户手动选择；成功后才清理。结果里的 `requiresSend` 永远为 `true`，注入脚本不点击发送按钮。
+
+`web_ai_copy_to_notes` 只在调用方已经确认目标论文后，把回答追加到 `{paper}/NOTES.md`，并保留已有 frontmatter。PDF 选区菜单可以准备当前选中文本到 ChatGPT composer；它不自动绑定论文，也不自动发送。
+
+## 尚未验收
+
+Windows、macOS、Linux 上的真实登录态、五个 provider DOM 和附件上传仍需人工 smoke。当前页面桥不能证明远程页面已经接受脚本生成的文件。macOS 与 Linux/Wayland 没有在本机执行。
 
 ## MCP Connector
 

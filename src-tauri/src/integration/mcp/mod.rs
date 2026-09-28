@@ -5,7 +5,7 @@
 mod files;
 mod icons;
 mod layout;
-mod notes;
+pub(crate) mod notes;
 mod paper;
 mod resources;
 mod server;

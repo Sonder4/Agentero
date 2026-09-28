@@ -25,6 +25,8 @@ type SelectionMenuProps = {
 	onAsk: () => void;
 	/** Open an optional inline comment before adding the quote to chat. */
 	onAddToChat: () => void;
+	/** Prepare the selection in the Web AI composer. Optional on non-PDF surfaces. */
+	onWebAi?: () => void;
 	onTranslate: () => void;
 	/** Show the highlight color stack (needs marks/ to persist into). */
 	showHighlight?: boolean;
@@ -48,6 +50,7 @@ export function SelectionMenu({
 	onHighlight,
 	onAsk,
 	onAddToChat,
+	onWebAi,
 	onTranslate,
 	showHighlight = true,
 	showTranslate = true,
@@ -144,6 +147,16 @@ export function SelectionMenu({
 						{addToChatShortcut}
 					</kbd>
 				</button>
+				{onWebAi ? (
+					<button
+						type="button"
+						className="inline-flex h-7 shrink-0 items-center rounded-md px-1.5 text-caption font-medium text-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+						aria-label={t("selection.webAi")}
+						onClick={onWebAi}
+					>
+						{t("selection.webAi")}
+					</button>
+				) : null}
 			</TooltipProvider>
 		</div>
 	);

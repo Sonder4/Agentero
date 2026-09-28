@@ -5053,7 +5053,9 @@ export type WebAiConversationBinding = {
 
 export type WebAiCopyArgs = {
 	providerId: string,
-	paperId: string | null,
+	vaultPath: string,
+	paperPath: string,
+	paperId: string,
 	answer: string,
 };
 
@@ -5154,6 +5156,7 @@ export type WebAiTransferResult = {
 	draftReady: boolean,
 	attachmentReady: boolean,
 	requiresSend: boolean,
+	manualFile: string | null,
 	message: string | null,
 	paperId: string | null,
 	page: number | null,

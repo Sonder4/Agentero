@@ -26,7 +26,7 @@
 | [rust-arch-refactor.md](rust-arch-refactor.md) | Rust 架构重构计划（2026-09-08 更新）：共享业务用例、提交与恢复、Vault 派生状态、论文准备/共享提取、任务生命周期、Agent 上下文六条主线；含前置正确性修复、依赖与验收、旧任务归并及历史裁决。实施未开始 |
 | [zhihu.md](zhihu.md) | 知乎开放平台集成：统一 CLI 后端（探测/一键安装/Keychain 凭证）+ 知乎虚拟 Agent（builtin ACP 适配 + 直答大脑）+ 广场知乎面板 + 论文找讨论 / 划词插引用。设计稿，实施未开始 |
 | [A2A.md](A2A.md) | 本机桌面与远端 headless 之间的薄 A2A 任务层：Agent Card + Task，把算力和数据留在服务器。设计草稿，实施未开始 |
-| [paperreader-web-ai-integration.md](paperreader-web-ai-integration.md) | 将 PaperReader 已有网页 AI provider、论文材料转交、会话绑定与 ChatGPT MCP Connector 纳入 Agentero 的 Rust/Tauri 需求与迁移设计；实施未开始 |
+| [paperreader-web-ai-integration.md](paperreader-web-ai-integration.md) | 网页 AI Host 骨架已落地（见 [../backend/web-ai.md](../backend/web-ai.md)）；真实站点登录、附件和跨平台 smoke 仍未验收 |
 
 macOS 签名与公证（已实现流程说明）在 [`../bug_fix/macos-signing.md`](../bug_fix/macos-signing.md)。
 

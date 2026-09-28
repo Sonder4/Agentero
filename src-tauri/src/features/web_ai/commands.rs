@@ -91,7 +91,9 @@ pub struct WebAiProjectArgs {
 #[serde(rename_all = "camelCase")]
 pub struct WebAiCopyArgs {
     pub provider_id: String,
-    pub paper_id: Option<String>,
+    pub vault_path: String,
+    pub paper_path: String,
+    pub paper_id: String,
     pub answer: String,
 }
 
@@ -119,6 +121,40 @@ fn provider_id(value: &str) -> Result<ProviderId, agentero_core::error::AppError
         _ => Err(agentero_core::error::AppError::message(
             "unknown web AI provider",
         )),
+    }
+}
+
+fn transfer_file(
+    controller: &WebAiController,
+    args: WebAiTransferFileArgs,
+    kind: agentero_core::features::web_ai::AttachmentKind,
+) -> Result<WebAiTransferResult, String> {
+    let prepared = agentero_core::features::web_ai::prepare_attachment(Path::new(&args.path), kind)
+        .map_err(|e| e.to_string())?;
+    match controller.attach_file(&args.provider_id, &prepared) {
+        Ok(true) => {
+            cleanup_attachment(&prepared.path);
+            Ok(WebAiTransferResult {
+                provider_id: args.provider_id,
+                draft_ready: false,
+                attachment_ready: true,
+                requires_send: true,
+                manual_file: None,
+                message: None,
+                paper_id: args.paper_id,
+                page: args.page,
+            })
+        }
+        Ok(false) | Err(_) => Ok(WebAiTransferResult {
+            provider_id: args.provider_id,
+            draft_ready: false,
+            attachment_ready: false,
+            requires_send: true,
+            manual_file: Some(prepared.path.display().to_string()),
+            message: Some("choose the prepared file in the provider page".into()),
+            paper_id: args.paper_id,
+            page: args.page,
+        }),
     }
 }
 
@@ -270,6 +306,7 @@ pub async fn web_ai_transfer_text(
         draft_ready: ready,
         attachment_ready: false,
         requires_send: true,
+        manual_file: None,
         message: (!ready).then(|| "provider WebView is not open".into()),
         paper_id: args.paper_id,
         page: args.page,
@@ -295,23 +332,12 @@ pub async fn web_ai_transfer_image(
     controller: State<'_, Arc<WebAiController>>,
     args: WebAiTransferFileArgs,
 ) -> Result<ApiResult<WebAiTransferResult>, String> {
-    let prepared = agentero_core::features::web_ai::prepare_attachment(
-        Path::new(&args.path),
+    transfer_file(
+        &controller,
+        args,
         agentero_core::features::web_ai::AttachmentKind::Image,
     )
-    .map_err(|e| e.to_string())?;
-    let ready = controller.attach_file(&args.provider_id, &prepared);
-    cleanup_attachment(&prepared.path);
-    let ready = ready?;
-    Ok(ApiResult::ok(WebAiTransferResult {
-        provider_id: args.provider_id,
-        draft_ready: ready,
-        attachment_ready: ready,
-        requires_send: true,
-        message: (!ready).then(|| "provider WebView is not open".to_string()),
-        paper_id: args.paper_id,
-        page: args.page,
-    }))
+    .map(ApiResult::ok)
 }
 
 #[tauri::command]
@@ -320,23 +346,12 @@ pub async fn web_ai_transfer_pdf(
     controller: State<'_, Arc<WebAiController>>,
     args: WebAiTransferFileArgs,
 ) -> Result<ApiResult<WebAiTransferResult>, String> {
-    let prepared = agentero_core::features::web_ai::prepare_attachment(
-        Path::new(&args.path),
+    transfer_file(
+        &controller,
+        args,
         agentero_core::features::web_ai::AttachmentKind::Pdf,
     )
-    .map_err(|e| e.to_string())?;
-    let ready = controller.attach_file(&args.provider_id, &prepared);
-    cleanup_attachment(&prepared.path);
-    let ready = ready?;
-    Ok(ApiResult::ok(WebAiTransferResult {
-        provider_id: args.provider_id,
-        draft_ready: ready,
-        attachment_ready: ready,
-        requires_send: true,
-        message: (!ready).then(|| "provider WebView is not open".to_string()),
-        paper_id: args.paper_id,
-        page: args.page,
-    }))
+    .map(ApiResult::ok)
 }
 
 #[tauri::command]
@@ -406,8 +421,25 @@ pub async fn web_ai_project_create(
 #[tauri::command]
 #[specta::specta]
 pub async fn web_ai_copy_to_notes(args: WebAiCopyArgs) -> Result<ApiResult<bool>, String> {
-    let accepted = !args.provider_id.trim().is_empty() && !args.answer.trim().is_empty();
-    Ok(ApiResult::ok(accepted))
+    let answer = args.answer.trim();
+    if providers::normalize_provider_id(&args.provider_id).is_none()
+        || args.vault_path.trim().is_empty()
+        || args.paper_path.trim().is_empty()
+        || args.paper_id.trim().is_empty()
+        || answer.is_empty()
+    {
+        return Ok(ApiResult::ok(false));
+    }
+    let body = format!("## Web AI\n\n{answer}\n");
+    crate::integration::mcp::notes::write_notes(
+        Path::new(&args.vault_path),
+        &args.paper_path,
+        &args.paper_id,
+        &body,
+        crate::integration::mcp::notes::WriteMode::Append,
+    )
+    .map(|_| ApiResult::ok(true))
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

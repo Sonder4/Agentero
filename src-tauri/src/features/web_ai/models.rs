@@ -75,6 +75,9 @@ pub struct WebAiTransferResult {
     pub draft_ready: bool,
     pub attachment_ready: bool,
     pub requires_send: bool,
+    /// Set when the provider rejects a scripted file input. The scratch file
+    /// stays available so the user can choose it manually.
+    pub manual_file: Option<String>,
     pub message: Option<String>,
     pub paper_id: Option<String>,
     pub page: Option<u32>,
