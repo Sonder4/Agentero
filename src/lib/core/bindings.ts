@@ -5156,6 +5156,10 @@ export type WebAiTransferResult = {
 	draftReady: boolean,
 	attachmentReady: boolean,
 	requiresSend: boolean,
+	/**
+	 *  Set when the provider rejects a scripted file input. The scratch file
+	 *  stays available so the user can choose it manually.
+	 */
 	manualFile: string | null,
 	message: string | null,
 	paperId: string | null,

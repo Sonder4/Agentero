@@ -15,8 +15,6 @@ export function WebAiPanel() {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const [providers, setProviders] = useState<WebAiProvider[]>([]);
 	const [providerId, setProviderId] = useState("chatgpt");
-	const providerIdRef = useRef(providerId);
-	providerIdRef.current = providerId;
 	const [status, setStatus] = useState<WebAiStatus | null>(null);
 	const [text, setText] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -42,9 +40,12 @@ export function WebAiPanel() {
 	}, [refresh]);
 
 	useEffect(() => {
+		// Capture the provider this effect owns. Reading the mutable selection
+		// during cleanup can hide a newly opened WebView after a provider switch
+		// or a panel refresh.
+		const currentProviderId = providerId;
 		if (!isTauri() || mobileOnly || !hostRef.current) return;
 		const host = hostRef.current;
-		const currentProviderId = providerIdRef.current;
 		let frame = 0;
 		const publish = () => {
 			frame = 0;
@@ -71,12 +72,14 @@ export function WebAiPanel() {
 		return () => {
 			observer.disconnect();
 			if (frame) cancelAnimationFrame(frame);
-			const closingId = providerIdRef.current;
 			void callApiResult(() =>
-				commands.webAiView({ providerId: closingId, visible: false }),
+				commands.webAiView({
+					providerId: currentProviderId,
+					visible: false,
+				}),
 			).catch(() => undefined);
 		};
-	}, [mobileOnly]);
+	}, [mobileOnly, providerId]);
 
 	const boundsForHost = () => {
 		const host = hostRef.current;
@@ -96,6 +99,12 @@ export function WebAiPanel() {
 		try {
 			const next = await callApiResult(() =>
 				commands.webAiOpen({ providerId, bounds: boundsForHost() }),
+			);
+			// A panel unmount can leave an in-flight cleanup hide request for
+			// this same provider. Re-assert visibility after open so reopening
+			// the panel cannot leave a successfully created WebView hidden.
+			await callApiResult(() =>
+				commands.webAiView({ providerId, visible: true }),
 			);
 			setStatus(next);
 		} catch (cause) {

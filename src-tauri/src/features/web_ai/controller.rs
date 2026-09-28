@@ -439,17 +439,14 @@ fn open_auth_popup(
         return tauri::webview::NewWindowResponse::Deny;
     }
     let label = format!("web-ai-auth-{}-{}", provider_id, Uuid::new_v4().simple());
-    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title("Web AI")
-        .inner_size(520.0, 720.0);
-    #[cfg(windows)]
-    {
-        builder = builder.with_environment(features.opener().environment.clone());
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = features;
-    }
+        .inner_size(520.0, 720.0)
+        // Tauri copies the opener's WebView2 environment on Windows here.
+        // `window_features` also preserves the opener's platform-specific
+        // configuration on macOS/Linux instead of creating an unrelated
+        // browser context for authentication popups.
+        .window_features(features);
     match builder.build() {
         Ok(window) => tauri::webview::NewWindowResponse::Create { window },
         Err(error) => {
