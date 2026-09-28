@@ -13,7 +13,7 @@ use std::io::Read;
 use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, Webview, WebviewUrl,
-    WebviewWindow, Wry,
+    WebviewWindow, WebviewWindowBuilder, Wry,
 };
 use url::Url;
 use uuid::Uuid;
@@ -135,6 +135,12 @@ impl WebAiController {
             let state = self.state.lock().map_err(|_| "web AI state poisoned")?;
             if let Some(entry) = state.views.get(&id) {
                 entry.view.show().map_err(|e| e.to_string())?;
+                if let Some(bounds) = bounds {
+                    entry
+                        .view
+                        .set_bounds(to_physical_rect(bounds))
+                        .map_err(|e| e.to_string())?;
+                }
                 return Ok(state
                     .statuses
                     .get(&id)
@@ -162,10 +168,12 @@ impl WebAiController {
             provider.composer_selectors,
             provider.attachment_selectors,
         );
+        let popup_app = app.clone();
+        let popup_id = id.clone();
         let builder = tauri::WebviewBuilder::new(label.clone(), WebviewUrl::External(url))
             .data_directory(profile.clone())
             .focused(false)
-            .initialization_script(script)
+            .initialization_script(script.clone())
             .on_navigation(move |url| {
                 handle_navigation(
                     &navigation_app,
@@ -174,7 +182,8 @@ impl WebAiController {
                     &navigation_nonce,
                     url,
                 )
-            });
+            })
+            .on_new_window(move |url, _features| open_auth_popup(&popup_app, &popup_id, url));
 
         let initial_bounds = bounds.unwrap_or(WebAiBounds {
             x: 0.0,
@@ -410,6 +419,28 @@ impl WebAiController {
 impl Default for WebAiController {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn open_auth_popup(
+    app: &AppHandle,
+    provider_id: &str,
+    url: Url,
+) -> tauri::webview::NewWindowResponse<Wry> {
+    if !providers::is_provider_navigation_url(provider_id, url.as_str()) {
+        return tauri::webview::NewWindowResponse::Deny;
+    }
+    let label = format!("web-ai-auth-{}-{}", provider_id, Uuid::new_v4().simple());
+    match WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        .title("Web AI")
+        .inner_size(520.0, 720.0)
+        .build()
+    {
+        Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+        Err(error) => {
+            log::warn!(target: "agentero::web_ai", "auth popup failed for {provider_id}: {error}");
+            tauri::webview::NewWindowResponse::Deny
+        }
     }
 }
 

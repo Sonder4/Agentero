@@ -74,11 +74,24 @@ export function WebAiPanel() {
 		};
 	}, [mobileOnly, providerId]);
 
+	const boundsForHost = () => {
+		const host = hostRef.current;
+		if (!host) return null;
+		const rect = host.getBoundingClientRect();
+		return {
+			x: rect.left,
+			y: rect.top,
+			width: rect.width,
+			height: rect.height,
+			scaleFactor: window.devicePixelRatio || 1,
+		};
+	};
+
 	const open = async () => {
 		setError(null);
 		try {
 			const next = await callApiResult(() =>
-				commands.webAiOpen({ providerId, bounds: null }),
+				commands.webAiOpen({ providerId, bounds: boundsForHost() }),
 			);
 			setStatus(next);
 		} catch (cause) {
