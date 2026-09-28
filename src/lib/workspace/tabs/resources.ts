@@ -300,7 +300,7 @@ export async function loadTabResources(
 			let paperPdf: string | null = null;
 			let paperBytes: ArrayBuffer | null = null;
 			let didDownload = false;
-			if (bundle?.pdfPath) {
+			if (bundle?.pdfPath && /\.pdf$/i.test(bundle.pdfPath)) {
 				paperBytes = await localFileToArrayBuffer(bundle.pdfPath);
 			}
 			if (!paperBytes) {

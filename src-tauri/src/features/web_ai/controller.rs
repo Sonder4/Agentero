@@ -143,9 +143,7 @@ impl WebAiController {
             }
         }
 
-        let main = app
-            .get_webview_window("main")
-            .ok_or_else(|| "main window is unavailable".to_string())?;
+        let main = host_window(app).ok_or_else(|| "main window is unavailable".to_string())?;
         let nonce = Uuid::new_v4().to_string();
         let label = format!("agentero-web-ai-{id}");
         let url = provider
@@ -450,6 +448,22 @@ fn mime_for_image(name: &str) -> &'static str {
     }
 }
 
+fn host_window(app: &AppHandle) -> Option<WebviewWindow<Wry>> {
+    app.get_webview_window("main")
+        .filter(|window| is_web_ai_host_label(window.label()))
+        .or_else(|| {
+            app.webview_windows()
+                .into_values()
+                .find(|window| is_web_ai_host_label(window.label()))
+        })
+}
+
+pub(crate) fn is_web_ai_host_label(label: &str) -> bool {
+    label != "settings"
+        && !label.starts_with("agentero-web-ai-")
+        && !label.starts_with("web-ai-window-")
+}
+
 fn closed_status(provider_id: &str) -> WebAiStatus {
     WebAiStatus {
         view: "closed".into(),
@@ -476,5 +490,19 @@ fn to_physical_rect(bounds: WebAiBounds) -> PhysicalRect<i32, u32> {
             (bounds.width * scale).max(0.0).round() as u32,
             (bounds.height * scale).max(0.0).round() as u32,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_web_ai_host_label;
+
+    #[test]
+    fn host_label_accepts_primary_and_secondary_app_windows() {
+        assert!(is_web_ai_host_label("main"));
+        assert!(is_web_ai_host_label("agentero-1234"));
+        assert!(!is_web_ai_host_label("settings"));
+        assert!(!is_web_ai_host_label("agentero-web-ai-gemini"));
+        assert!(!is_web_ai_host_label("web-ai-window-gemini"));
     }
 }

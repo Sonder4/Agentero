@@ -119,7 +119,7 @@ pub fn probe_paper_caps(paper_dir: &Path) -> PaperCaps {
                 stack.push(path);
                 continue;
             }
-            if is_ext(&path, &["pdf"]) && caps.pdf_path.is_none() {
+            if path.is_file() && is_ext(&path, &["pdf"]) && caps.pdf_path.is_none() {
                 caps.pdf_path = Some(path);
             } else if is_ext(&path, &["tex", "ltx"]) {
                 caps.has_tex = true;
@@ -139,7 +139,7 @@ pub fn probe_paper_caps(paper_dir: &Path) -> PaperCaps {
                 }
                 continue;
             }
-            if caps.pdf_path.is_none() && is_ext(&path, &["pdf"]) {
+            if path.is_file() && caps.pdf_path.is_none() && is_ext(&path, &["pdf"]) {
                 caps.pdf_path = Some(path);
             } else if is_ext(&path, &["tex", "ltx"]) {
                 caps.has_tex = true;

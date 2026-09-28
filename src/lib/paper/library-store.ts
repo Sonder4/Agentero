@@ -7,7 +7,7 @@
 import { createStore } from "zustand/vanilla";
 import { isTauri } from "@/lib/core/tauri";
 import type { PaperLibraryRow, PaperMetadata } from "@/lib/paper";
-import { listPapers, rescanPapers, setPaperTags } from "@/lib/paper/api";
+import { listPapers, setPaperTags } from "@/lib/paper/api";
 import type { LocalPdfImportEntry } from "@/lib/paper/lookup";
 import type { CitingScanResult } from "@/lib/paper/refs";
 import type { PaperTagInput } from "@/lib/paper/tags";
@@ -192,10 +192,9 @@ export async function runLibraryRefresh(): Promise<void> {
 		return;
 	}
 	try {
-		// External moves (especially cross-directory drags in Finder) may not
-		// arrive as a trustworthy rename pair. Rebuild catalog rows from disk
-		// sidecars first so titles/metadata follow the new paths, then list.
-		await rescanPapers(vaultPath);
+		// Quiet refreshes only reread the catalog. A full disk rebuild is
+		// reserved for the explicit library rescan action; running it after
+		// every PAPER.md write requeues body parsing for the whole vault.
 		const papers = await listPapers(vaultPath);
 		if (getVaultPath() === vaultPath) setLibraryPapers(papers);
 	} catch {

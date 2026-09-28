@@ -53,6 +53,10 @@ const PDF_LOCATE_WORKER_ARG: &str = "--agentero-internal-pdf-locate-worker";
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 const PDF_PARSE_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+const PDF_PARSE_LARGE_TIMEOUT: Duration = Duration::from_secs(300);
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+const PDF_PARSE_LARGE_BYTES: u64 = 15 * 1024 * 1024;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 const PDF_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 const PDF_LOCATE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -595,6 +599,7 @@ fn worker_stderr_tail(path: &Path) -> Option<String> {
     const MAX_CHARS: usize = 800;
     let text = fs::read_to_string(path).ok()?;
     let text = text.trim();
+    let text = filter_pdfium_noise(text);
     if text.is_empty() {
         return None;
     }
@@ -604,12 +609,38 @@ fn worker_stderr_tail(path: &Path) -> Option<String> {
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn filter_pdfium_noise(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let line = line.trim();
+            !line.starts_with("Number of remaining pixels")
+                && !line.starts_with("Detected ")
+                && !line.ends_with(" diacritics")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn pdf_parse_timeout(pdf_path: &Path) -> Duration {
+    match fs::metadata(pdf_path).map(|meta| meta.len()) {
+        Ok(len) if len >= PDF_PARSE_LARGE_BYTES => PDF_PARSE_LARGE_TIMEOUT,
+        _ => PDF_PARSE_TIMEOUT,
+    }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 async fn run_liteparse_markdown(
     pdf_path: &Path,
     task_id: Option<&str>,
 ) -> Result<(String, String, String), AppError> {
-    let bytes =
-        spawn_pdf_worker(PDF_PARSE_WORKER_ARG, pdf_path, task_id, PDF_PARSE_TIMEOUT).await?;
+    let bytes = spawn_pdf_worker(
+        PDF_PARSE_WORKER_ARG,
+        pdf_path,
+        task_id,
+        pdf_parse_timeout(pdf_path),
+    )
+    .await?;
     let response = serde_json::from_slice::<PdfParseWorkerResponse>(&bytes).map_err(|error| {
         AppError::message(format!("decode isolated PDF parser response: {error}"))
     })?;
@@ -1176,6 +1207,17 @@ mod tests {
         let tail = worker_stderr_tail(&long).unwrap();
         assert_eq!(tail.chars().count(), 800);
         assert!(tail.ends_with("tail-marker"));
+
+        let noisy = dir.join("noisy.log");
+        fs::write(
+            &noisy,
+            "Number of remaining pixels = 0\nDetected 7 diacritics\nreal parser failure\n",
+        )
+        .unwrap();
+        assert_eq!(
+            worker_stderr_tail(&noisy).as_deref(),
+            Some("real parser failure")
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -148,12 +148,21 @@ pub fn migrate_legacy_sidecars(vault_root: &Path) -> std::io::Result<usize> {
                     if let Err(e) =
                         fs::create_dir_all(&target_dir).and_then(|_| fs::rename(&legacy, &target))
                     {
-                        log::warn!(
-                            target: "agentero::catalog",
-                            "failed to migrate metadata {} -> {}: {e}",
-                            legacy.display(),
-                            target.display()
-                        );
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            log::debug!(
+                                target: "agentero::catalog",
+                                "legacy metadata already absent {} -> {}: {e}",
+                                legacy.display(),
+                                target.display()
+                            );
+                        } else {
+                            log::warn!(
+                                target: "agentero::catalog",
+                                "failed to migrate metadata {} -> {}: {e}",
+                                legacy.display(),
+                                target.display()
+                            );
+                        }
                     } else {
                         moved += 1;
                     }
