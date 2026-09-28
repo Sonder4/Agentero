@@ -25,6 +25,7 @@ export const PAPER_ATTACHMENTS_DIR = "attachments";
  * candidates, and writes under them do not change catalog rows.
  */
 export const PAPER_INTERNAL_DIR_NAMES = [
+	".src",
 	"source",
 	"assets",
 	"marks",
@@ -48,13 +49,14 @@ export function isPaperAttachmentsDirName(
 
 /**
  * True when path is inside a paper folder's internal dirs
- * (`<paper>/source|assets|marks|attachments/…`). Highlight/LaTeX/image/attachment
+ * (`<paper>/.src|source|assets|marks|attachments/…`). Generated sidecars,
+ * highlight/LaTeX/image/attachment
  * writes there never change catalog rows, so they must not trigger library refreshes.
  */
 export function isPaperAssetPath(path: string | null): boolean {
 	if (!path) return false;
 	const norm = normalizePath(path);
-	return /(^|\/)papers\/.+?\/(source|assets|marks|attachments)(\/|$)/i.test(
+	return /(^|\/)papers\/.+?\/(\.src|source|assets|marks|attachments)(\/|$)/i.test(
 		norm,
 	);
 }

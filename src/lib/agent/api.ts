@@ -1,5 +1,5 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import i18n from "@/i18n";
 import {
 	commands,
@@ -753,7 +753,7 @@ export function listenAgentStream(
 	handler: (e: AgentStreamEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentStream(getCurrentWebviewWindow())
+		.agentStream(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -761,7 +761,7 @@ export function listenAgentCompleted(
 	handler: (e: AgentResultPayload) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentCompleted(getCurrentWebviewWindow())
+		.agentCompleted(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -769,7 +769,7 @@ export function listenAgentFailed(
 	handler: (e: AgentFailedEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentFailed(getCurrentWebviewWindow())
+		.agentFailed(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -777,7 +777,7 @@ export function listenAgentStatus(
 	handler: (e: AgentStatusEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentStatus(getCurrentWebviewWindow())
+		.agentStatus(getCurrentWebview())
 		.listen((message) => handler(message.payload as AgentStatusEvent));
 }
 
@@ -785,7 +785,7 @@ export function listenAgentTool(
 	handler: (e: AgentToolEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentTool(getCurrentWebviewWindow())
+		.agentTool(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -793,7 +793,7 @@ export function listenAgentPlan(
 	handler: (e: AgentPlanEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentPlan(getCurrentWebviewWindow())
+		.agentPlan(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -801,7 +801,7 @@ export function listenAgentUsage(
 	handler: (e: AgentUsageEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentUsage(getCurrentWebviewWindow())
+		.agentUsage(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -809,7 +809,7 @@ export function listenAgentSessionInfo(
 	handler: (e: AgentSessionInfoEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentSessionInfo(getCurrentWebviewWindow())
+		.agentSessionInfo(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -817,7 +817,7 @@ export function listenAgentCommands(
 	handler: (e: AgentCommandsEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentCommands(getCurrentWebviewWindow())
+		.agentCommands(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -825,7 +825,7 @@ export function listenAgentModels(
 	handler: (e: AgentModelsEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentModels(getCurrentWebviewWindow())
+		.agentModels(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -833,7 +833,7 @@ export function listenAgentEffort(
 	handler: (e: AgentEffortEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentEffort(getCurrentWebviewWindow())
+		.agentEffort(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -841,7 +841,7 @@ export function listenAgentFastMode(
 	handler: (e: AgentFastModeEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentFastMode(getCurrentWebviewWindow())
+		.agentFastMode(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 
@@ -849,7 +849,7 @@ export function listenAgentCollaboration(
 	handler: (e: AgentCollaborationEvent) => void,
 ): Promise<UnlistenFn> {
 	return events
-		.agentCollaboration(getCurrentWebviewWindow())
+		.agentCollaboration(getCurrentWebview())
 		.listen((message) => handler(message.payload));
 }
 

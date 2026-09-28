@@ -320,13 +320,6 @@ async fn walk_remote_org(
                 .exists(&format!("{child}/.src/metadata.json"))
                 .await
                 .unwrap_or(false)
-            // Legacy marker is checked only to keep an unmigrated remote
-            // paper out of the collection tree; remote rescan moves it.
-            || session
-                .fs
-                .exists(&format!("{child}/metadata.json"))
-                .await
-                .unwrap_or(false)
             || session
                 .fs
                 .exists(&format!("{child}/{name}.pdf"))
