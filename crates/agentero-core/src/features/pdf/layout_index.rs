@@ -1,4 +1,4 @@
-//! Sidebar layout index (`{paper}/source/layout-index.json`).
+//! Sidebar layout index (`{paper}/.src/layout-index.json`).
 //!
 //! Shared by CLI `layout` / `mark --region` and MCP `layout_*` tools.
 
@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const LAYOUT_INDEX_FILE: &str = "layout-index.json";
+pub const GENERATED_DIR: &str = ".src";
 pub const LAYOUT_RAW_FILE: &str = "layout.json";
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,18 +80,18 @@ fn paper_abs(vault: &Path, paper_path: &str) -> Result<PathBuf, AppError> {
     Ok(vault.join(rel))
 }
 
-/// Load and validate `source/layout-index.json` for a paper folder.
+/// Load and validate `.src/layout-index.json` for a paper folder.
 fn load_index(vault: &Path, paper_path: &str) -> Result<LoadedIndex, AppError> {
     let dir = paper_abs(vault, paper_path)?;
-    let index_abs = dir.join("source").join(LAYOUT_INDEX_FILE);
-    let rel_index = format!("{paper_path}/source/{LAYOUT_INDEX_FILE}");
+    let index_abs = dir.join(GENERATED_DIR).join(LAYOUT_INDEX_FILE);
+    let rel_index = format!("{paper_path}/{GENERATED_DIR}/{LAYOUT_INDEX_FILE}");
 
     if !index_abs.is_file() {
         let raw = dir.join("source").join(LAYOUT_RAW_FILE);
         let hint = if raw.is_file() {
-            "source/layout.json exists but layout-index.json is missing — open the paper in Agentero (or re-run layout analysis) to write the sidebar index"
+            ".src/layout-index.json is missing while source/layout.json exists — open the paper in Agentero (or re-run layout analysis) to write the sidebar index"
         } else {
-            "no source/layout-index.json — open the paper in Agentero and run layout analysis (Figures) first"
+            "no .src/layout-index.json — open the paper in Agentero and run layout analysis (Figures) first"
         };
         return Err(AppError::domain("layout_index_missing", hint));
     }
@@ -408,9 +409,9 @@ mod tests {
     use tempfile::tempdir;
 
     fn write_index(paper: &Path, body: &str) {
-        let source = paper.join("source");
-        fs::create_dir_all(&source).unwrap();
-        fs::write(source.join(LAYOUT_INDEX_FILE), body).unwrap();
+        let generated = paper.join(GENERATED_DIR);
+        fs::create_dir_all(&generated).unwrap();
+        fs::write(generated.join(LAYOUT_INDEX_FILE), body).unwrap();
     }
 
     fn write_raw_layout(paper: &Path, body: &str) {
@@ -447,6 +448,7 @@ mod tests {
         );
         let listed = list_regions(vault, "papers/p1", &["figure".into()], None).unwrap();
         assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.index_path, "papers/p1/.src/layout-index.json");
         assert_eq!(listed.items[0].id, "figure-1");
         let got = get_region(vault, "papers/p1", "table-1").unwrap();
         assert_eq!(got.item.kind, "table");

@@ -412,6 +412,10 @@
 		"dualPane": {
 			"label": "在侧窗中打开渲染好的翻译"
 		},
+		"layoutConcurrency": {
+			"label": "PDF 全文翻译并发数",
+			"description": "同时翻译的文本块数量。数值越高速度越快，也可能更容易触发限流。"
+		},
 		"providerConfig": {
 			"section": "API 服务",
 			"confirm": "确定",

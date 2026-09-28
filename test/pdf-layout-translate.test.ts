@@ -13,12 +13,20 @@ import {
 	type LayoutTranslateItem,
 	type LayoutTranslateItemStatus,
 	layoutRegionSourceText,
+	layoutTranslateSidecarPath,
 	listTranslatableLayoutRegions,
 	parseLayoutTranslateSidecar,
 	persistLayoutTranslateSidecarBestEffort,
 	toLayoutTranslateItems,
 	translateServiceKey,
 } from "@/lib/pdf/layout/layout-translate";
+import {
+	glossaryContentHash,
+	layoutTranslateGlossaryPath,
+	layoutTranslateStatePath,
+	readLayoutTranslateGlossary,
+	sourceContentHash,
+} from "@/lib/pdf/layout/layout-translate-object";
 import type { PdfLayoutRegion } from "@/lib/pdf/layout/types";
 import { DEFAULT_TRANSLATE_SETTINGS } from "@/lib/translate/defaults";
 
@@ -346,6 +354,63 @@ describe("groupLayoutTranslateItemsByPage", () => {
 		expect(after.get(0)).toBe(before.get(0));
 		expect(after.get(1)).not.toBe(before.get(1));
 		expect(after.get(1)?.map((it) => it.status)).toEqual(["done"]);
+	});
+});
+
+describe("layout translate sidecar path", () => {
+	it("keeps translation data in the hidden .src directory", () => {
+		expect(layoutTranslateSidecarPath("/vault/papers/attention")).toBe(
+			"/vault/papers/attention/.src/layout-translate.json",
+		);
+		expect(layoutTranslateSidecarPath("/vault/papers/2106.12481v2.pdf")).toBe(
+			"/vault/papers/2106.12481v2/.src/layout-translate.json",
+		);
+		expect(layoutTranslateGlossaryPath("/vault/papers/attention")).toBe(
+			"/vault/papers/attention/.src/glossary.json",
+		);
+		expect(layoutTranslateStatePath("/vault/papers/attention")).toBe(
+			"/vault/papers/attention/.src/state.json",
+		);
+	});
+
+	it("uses stable hashes for source snapshots and glossary terms", () => {
+		expect(sourceContentHash("same source")).toBe(
+			sourceContentHash("same source"),
+		);
+		expect(sourceContentHash("same source")).not.toBe(
+			sourceContentHash("changed source"),
+		);
+		expect(
+			glossaryContentHash([{ source: "attention", target: "注意力" }]),
+		).toBe(glossaryContentHash([{ source: "attention", target: "注意力" }]));
+	});
+
+	it("only loads a glossary for the matching paper and language", async () => {
+		const vault = await import("@/lib/vault");
+		vi.mocked(vault.readVaultFile).mockResolvedValue(
+			JSON.stringify({
+				schemaVersion: 1,
+				objectType: "paper",
+				objectId: "papers/attention",
+				sourceLang: "auto",
+				targetLang: "zh-CN",
+				terms: [{ source: "attention", target: "注意力" }],
+			}),
+		);
+		const glossary = await readLayoutTranslateGlossary(
+			"/vault/papers/attention",
+			"papers/attention",
+			"auto",
+			"zh-CN",
+		);
+		expect(glossary.terms).toHaveLength(1);
+		const mismatch = await readLayoutTranslateGlossary(
+			"/vault/papers/attention",
+			"papers/other",
+			"auto",
+			"zh-CN",
+		);
+		expect(mismatch.terms).toHaveLength(0);
 	});
 });
 

@@ -84,6 +84,25 @@ export {
 	slugFromTitle,
 } from "@/lib/pdf/layout/layout-index";
 export {
+	glossaryContentHash,
+	isLayoutTranslateUnitStaleForGlossary,
+	LAYOUT_TRANSLATE_DATA_DIR,
+	LAYOUT_TRANSLATE_GLOSSARY_FILE,
+	LAYOUT_TRANSLATE_STATE_FILE,
+	type LayoutTranslateGlossary,
+	type LayoutTranslateGlossaryTerm,
+	type LayoutTranslateState,
+	type LayoutTranslateUnitState,
+	layoutTranslateGlossaryPath,
+	layoutTranslateStatePath,
+	readLayoutTranslateGlossary,
+	readLayoutTranslateState,
+	sourceContentHash,
+	usedGlossaryTermHashes,
+	writeLayoutTranslateGlossary,
+	writeLayoutTranslateState,
+} from "@/lib/pdf/layout/layout-translate-object";
+export {
 	applyLayoutTranslateSidecar,
 	currentLayoutTranslateCacheKey,
 	groupLayoutTranslateItemsByPage,

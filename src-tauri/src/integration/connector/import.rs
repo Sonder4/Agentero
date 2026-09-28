@@ -309,12 +309,19 @@ async fn walk_remote_org(
     dirs.sort_by_key(|a| a.to_lowercase());
     for name in dirs {
         let child = format!("{rel}/{name}");
-        // Paper unit heuristic: NOTES.md / metadata.json / {stem}.pdf
+        // Paper unit heuristic: NOTES.md / .src/metadata.json / {stem}.pdf
         let is_paper = session
             .fs
             .exists(&format!("{child}/NOTES.md"))
             .await
             .unwrap_or(false)
+            || session
+                .fs
+                .exists(&format!("{child}/.src/metadata.json"))
+                .await
+                .unwrap_or(false)
+            // Legacy marker is checked only to keep an unmigrated remote
+            // paper out of the collection tree; remote rescan moves it.
             || session
                 .fs
                 .exists(&format!("{child}/metadata.json"))

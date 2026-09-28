@@ -14,6 +14,12 @@ import {
 	uiStore,
 } from "@/lib/shell/ui-store";
 
+function isFeatureViewTab(
+	tab: RightSidebarTab,
+): tab is "agent" | "annotations" {
+	return tab === "agent" || tab === "annotations";
+}
+
 /** ⌘L — toggle right sidebar (defaults to agent). */
 export function toggleChat(): void {
 	setLayoutMode("custom");
@@ -24,7 +30,11 @@ export function toggleChat(): void {
 	}
 	void import("@/lib/shell/feature-window").then(
 		async ({ preferFeatureWindow }) => {
-			if (await preferFeatureWindow(rightSidebarTab)) return;
+			if (
+				isFeatureViewTab(rightSidebarTab) &&
+				(await preferFeatureWindow(rightSidebarTab))
+			)
+				return;
 			layout()?.setRightCollapsed(false, {
 				focusAgent: rightSidebarTab === "agent",
 			});
@@ -41,7 +51,7 @@ export function openRightTab(tab: RightSidebarTab): void {
 	setLayoutMode("custom");
 	void import("@/lib/shell/feature-window").then(
 		async ({ preferFeatureWindow }) => {
-			if (await preferFeatureWindow(tab)) return;
+			if (isFeatureViewTab(tab) && (await preferFeatureWindow(tab))) return;
 			openRightTabInRail(tab);
 		},
 	);

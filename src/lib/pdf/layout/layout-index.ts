@@ -1,7 +1,8 @@
 /**
  * Sidebar-aligned layout index for CLI / Agent.
  *
- * Written next to `source/layout.json` as `source/layout-index.json`.
+ * Written as `<paper>/.src/layout-index.json`; the raw model output remains
+ * at `<paper>/source/layout.json`.
  * Items match the Figures rail: post-merge hosts + score/NMS gates.
  */
 import { LAYOUT_SIDEBAR_MIN_SCORE } from "@/lib/pdf/layout/constants";

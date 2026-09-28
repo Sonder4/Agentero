@@ -2,7 +2,7 @@
 //!
 //! Priority: online structured references (Semantic Scholar → Crossref) →
 //! local `source/` BibTeX / `.bbl` / inline `thebibliography` fallback.
-//! Results persist to the rebuildable sidecar `{paper}/source/agentero-cite.json`.
+//! Results persist to the rebuildable sidecar `{paper}/.src/citations.json`.
 //!
 //! @see docs/backend/citation-parsing.md
 
@@ -22,7 +22,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::{Mutex, Notify};
 
-pub const SIDECAR_FILE: &str = "agentero-cite.json";
+pub const SIDECAR_FILE: &str = "citations.json";
+pub const GENERATED_DIR: &str = ".src";
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -225,7 +226,7 @@ fn prepare_parse_refs(
 
     let files = collect_ref_files(&paper_dir);
     let fingerprint = fingerprint(doi.as_deref(), arxiv.as_deref(), online_enabled, &files);
-    let sidecar_path = paper_dir.join("source").join(SIDECAR_FILE);
+    let sidecar_path = paper_dir.join(GENERATED_DIR).join(SIDECAR_FILE);
     Ok(PreparedParseRefs {
         vault: vault.to_path_buf(),
         path_rel,
@@ -918,7 +919,8 @@ K.~He.
             Some("1706.03762")
         );
         assert!(vault
-            .join("papers/demo/source")
+            .join("papers/demo")
+            .join(GENERATED_DIR)
             .join(SIDECAR_FILE)
             .is_file());
 
@@ -967,7 +969,8 @@ K.~He.
         assert_eq!(sidecar.source.mode, "none");
         assert!(sidecar.citations.is_empty());
         assert!(vault
-            .join("papers/demo/source")
+            .join("papers/demo")
+            .join(GENERATED_DIR)
             .join(SIDECAR_FILE)
             .is_file());
         let _ = fs::remove_dir_all(&vault);

@@ -24,6 +24,9 @@ describe("paper folder minimal unit", () => {
 
 	it("identifies paper folders by markers, not path depth", () => {
 		expect(
+			directoryHasPaperMarkers([{ name: ".src", kind: "directory" }]),
+		).toBe(true);
+		expect(
 			directoryHasPaperMarkers([
 				{ name: "NOTES.md", kind: "file" },
 				{ name: "source", kind: "directory" },
@@ -53,7 +56,11 @@ describe("paper folder minimal unit", () => {
 					kind: "directory",
 					children: [
 						{ name: "NOTES.md", kind: "file" },
-						{ name: "metadata.json", kind: "file" },
+						{
+							name: ".src",
+							kind: "directory",
+							children: [{ name: "metadata.json", kind: "file" }],
+						},
 					],
 				},
 			]),
@@ -152,7 +159,7 @@ describe("paper folder minimal unit", () => {
 					name: "NOTES.md",
 				},
 				{
-					path: `/v/papers/rubric/${name}/metadata.json`,
+					path: `/v/papers/rubric/${name}/.src/metadata.json`,
 					kind: "file" as const,
 					name: "metadata.json",
 				},

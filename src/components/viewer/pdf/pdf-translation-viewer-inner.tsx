@@ -89,6 +89,7 @@ const PAGE_MODE: PdfPageModeSlice = {
 
 export function PdfTranslationViewerInner({
 	docId,
+	paperMeta = null,
 	paperAbsPath = null,
 	paperRelPath = null,
 	vaultPath = null,
@@ -113,6 +114,8 @@ export function PdfTranslationViewerInner({
 		layoutTranslatePageStateByPage,
 		layoutTranslateActive,
 		layoutTranslateRunning,
+		layoutTranslateProgress,
+		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,
 	} = usePdfLayoutTranslate({
@@ -122,6 +125,7 @@ export function PdfTranslationViewerInner({
 		paperAbsPath,
 		paperRelPath,
 		paperKey,
+		paperObjectId: paperMeta?.id ?? null,
 		vaultPath,
 	});
 
@@ -131,6 +135,13 @@ export function PdfTranslationViewerInner({
 	layoutTranslateActiveRef.current = layoutTranslateActive;
 	const layoutTranslateRunningRef = useRef(layoutTranslateRunning);
 	layoutTranslateRunningRef.current = layoutTranslateRunning;
+	const layoutTranslateIncomplete =
+		layoutTranslateProgress.pending +
+			layoutTranslateProgress.error +
+			layoutTranslateProgress.skipped >
+		0;
+	const layoutTranslateIncompleteRef = useRef(layoutTranslateIncomplete);
+	layoutTranslateIncompleteRef.current = layoutTranslateIncomplete;
 
 	useEffect(() => {
 		const hasRegions = (layoutRawRegions?.length ?? 0) > 0;
@@ -141,16 +152,21 @@ export function PdfTranslationViewerInner({
 			hadLayoutRegionsRef.current = false;
 		}
 		if (!hasRegions) return;
+		if (!layoutTranslateCacheReady) return;
 		if (translationAutoStartedRef.current) return;
-		if (layoutTranslateActive || layoutTranslateRunning) {
+		if (
+			layoutTranslateRunning ||
+			(layoutTranslateActive && !layoutTranslateIncomplete)
+		) {
 			translationAutoStartedRef.current = true;
 			return;
 		}
 		const timer = window.setTimeout(() => {
 			if (translationAutoStartedRef.current) return;
 			if (
-				layoutTranslateActiveRef.current ||
-				layoutTranslateRunningRef.current
+				layoutTranslateRunningRef.current ||
+				(layoutTranslateActiveRef.current &&
+					!layoutTranslateIncompleteRef.current)
 			) {
 				translationAutoStartedRef.current = true;
 				return;
@@ -163,6 +179,8 @@ export function PdfTranslationViewerInner({
 		layoutRawRegions,
 		layoutTranslateActive,
 		layoutTranslateRunning,
+		layoutTranslateIncomplete,
+		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 	]);
 

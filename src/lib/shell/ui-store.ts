@@ -18,9 +18,9 @@ import {
 	layoutModeRightCollapsed,
 } from "@/lib/shell/layout-presets";
 
-export type RightSidebarTab = "agent" | "annotations";
+export type RightSidebarTab = "agent" | "web-ai" | "annotations";
 /** Views that may live in a singleton native feature window (right-rail popouts). */
-export type FeatureViewType = RightSidebarTab;
+export type FeatureViewType = "agent" | "annotations";
 /** Layout presets plus the free-form arrangement after any manual change. */
 export type LayoutMode = LayoutPresetMode | "custom";
 

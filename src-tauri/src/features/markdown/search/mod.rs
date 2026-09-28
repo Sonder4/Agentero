@@ -1,19 +1,42 @@
-//! Vault-wide full-text search over Markdown files.
+//! Vault-wide full-text search over notes and saved translations.
 //!
-//! Walk-based (always fresh, no index): scans `*.md` under the Vault (skipping
-//! hidden / system dirs), requires all query terms (AND), and returns ranked
-//! hits with a snippet + line number. Hits inside a `papers/<…>` folder carry
-//! `paper_path` so the UI can open the paper instead of the raw file.
+//! File bodies stay in an in-process cache keyed by path, mtime, and length.
+//! A query still walks the tree so new files appear, but it rereads a file only
+//! when that stamp changed. A thousand papers therefore do not reread every
+//! note on each keystroke.
 
 use crate::core::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024; // skip very large md files
 const MAX_DEPTH: usize = 16;
 const MAX_FILES: usize = 20_000;
 const SNIPPET_CHARS: usize = 200;
+
+struct IndexedDoc {
+    modified: Option<SystemTime>,
+    len: u64,
+    path: String,
+    paper_path: Option<String>,
+    title: String,
+    text_lower: String,
+    lines: Vec<String>,
+}
+
+struct VaultIndex {
+    vault: PathBuf,
+    docs: HashMap<PathBuf, IndexedDoc>,
+}
+
+fn search_cache() -> &'static Mutex<Option<VaultIndex>> {
+    static CACHE: Mutex<Option<VaultIndex>> = Mutex::new(None);
+    &CACHE
+}
 
 #[derive(Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -66,21 +89,120 @@ pub fn vault_search(args: VaultSearchArgs) -> Result<VaultSearchResult, AppError
     let limit = args.limit.unwrap_or(60).clamp(1, 200);
 
     let mut files: Vec<PathBuf> = Vec::new();
-    collect_md_files(&vault, 0, &mut files);
+    collect_search_files(&vault, 0, &mut files);
+
+    let mut guard = search_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let index = guard.get_or_insert_with(|| VaultIndex {
+        vault: vault.clone(),
+        docs: HashMap::new(),
+    });
+    if index.vault != vault {
+        index.vault = vault.clone();
+        index.docs.clear();
+    }
+    let present: HashMap<&Path, ()> = files.iter().map(|file| (file.as_path(), ())).collect();
+    index
+        .docs
+        .retain(|path, _| present.contains_key(path.as_path()));
+    for file in &files {
+        refresh_doc(&vault, file, index);
+    }
 
     let mut hits: Vec<SearchHit> = Vec::new();
     for file in &files {
-        if let Some(hit) = search_file(&vault, file, &terms) {
+        if let Some(hit) = hit_from_doc(index.docs.get(file), &terms) {
             hits.push(hit);
         }
     }
+    drop(guard);
     hits.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
     let truncated = hits.len() > limit;
     hits.truncate(limit);
     Ok(VaultSearchResult { hits, truncated })
 }
 
-fn collect_md_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+fn refresh_doc(vault: &Path, file: &Path, index: &mut VaultIndex) {
+    let Ok(meta) = fs::metadata(file) else {
+        index.docs.remove(file);
+        return;
+    };
+    if meta.len() > MAX_FILE_BYTES {
+        index.docs.remove(file);
+        return;
+    }
+    let modified = meta.modified().ok();
+    if let Some(existing) = index.docs.get(file) {
+        if existing.len == meta.len() && existing.modified == modified {
+            return;
+        }
+    }
+    let Ok(raw) = fs::read_to_string(file) else {
+        index.docs.remove(file);
+        return;
+    };
+    let (body, title) = searchable_body(file, &raw);
+    let Ok(rel_path) = file.strip_prefix(vault) else {
+        return;
+    };
+    let rel = rel_path.to_string_lossy().replace('\\', "/");
+    let lines: Vec<String> = body.lines().map(str::to_string).collect();
+    index.docs.insert(
+        file.to_path_buf(),
+        IndexedDoc {
+            modified,
+            len: meta.len(),
+            paper_path: paper_path_for(&rel),
+            path: rel,
+            title,
+            text_lower: body.to_lowercase(),
+            lines,
+        },
+    );
+}
+
+fn hit_from_doc(doc: Option<&IndexedDoc>, terms: &[String]) -> Option<SearchHit> {
+    let doc = doc?;
+    if !terms
+        .iter()
+        .all(|term| doc.text_lower.contains(term.as_str()))
+    {
+        return None;
+    }
+    let mut line = 0u32;
+    let mut snippet = String::new();
+    for (i, raw) in doc.lines.iter().enumerate() {
+        let lower = raw.to_lowercase();
+        if terms.iter().any(|term| lower.contains(term.as_str())) {
+            line = (i + 1) as u32;
+            snippet = make_snippet(raw, terms);
+            break;
+        }
+    }
+    let title_lower = doc.title.to_lowercase();
+    let mut score: i64 = 0;
+    for term in terms {
+        if title_lower.contains(term.as_str()) {
+            score += 50;
+        }
+        score += doc.text_lower.matches(term.as_str()).count().min(20) as i64;
+    }
+    let fname = doc.path.rsplit('/').next().unwrap_or("");
+    if fname.eq_ignore_ascii_case("NOTES.md") || fname.eq_ignore_ascii_case("PAPER.md") {
+        score += 5;
+    }
+    Some(SearchHit {
+        paper_path: doc.paper_path.clone(),
+        path: doc.path.clone(),
+        title: doc.title.clone(),
+        snippet,
+        line,
+        score,
+    })
+}
+
+fn collect_search_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if depth > MAX_DEPTH || out.len() >= MAX_FILES {
         return;
     }
@@ -92,16 +214,25 @@ fn collect_md_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if path.is_dir() {
-            // Skip hidden (.agentero/.git/.trash), deps, and LaTeX/e-print source.
-            if name.starts_with('.') || name == "node_modules" || name == "source" {
+            // `.src/` contains rebuildable Agentero artifacts. Keep the
+            // translation cache searchable while leaving metadata, layout
+            // indexes, and other internal files hidden from vault search.
+            if name == ".src" {
+                let sidecar = path.join("layout-translate.json");
+                if sidecar.is_file() {
+                    out.push(sidecar);
+                }
                 continue;
             }
-            collect_md_files(&path, depth + 1, out);
-        } else if path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("md"))
-        {
+            // `source/` is reserved for raw MinerU/LaTeX/layout inputs.
+            if name == "source" {
+                continue;
+            }
+            if name.starts_with('.') || name == "node_modules" {
+                continue;
+            }
+            collect_search_files(&path, depth + 1, out);
+        } else if is_search_file(&name) {
             out.push(path);
             if out.len() >= MAX_FILES {
                 return;
@@ -110,69 +241,85 @@ fn collect_md_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn search_file(vault: &Path, file: &Path, terms: &[String]) -> Option<SearchHit> {
-    let meta = fs::metadata(file).ok()?;
-    if meta.len() > MAX_FILE_BYTES {
-        return None;
-    }
-    let content = fs::read_to_string(file).ok()?;
-    let lower = content.to_lowercase();
-    // AND semantics: every term must appear somewhere in the file.
-    if !terms.iter().all(|t| lower.contains(t.as_str())) {
-        return None;
-    }
+fn is_search_file(name: &str) -> bool {
+    is_translation_cache(name)
+        || Path::new(name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+}
 
-    let rel = file
-        .strip_prefix(vault)
-        .ok()?
-        .to_string_lossy()
-        .replace('\\', "/");
-
-    let title = content
+fn searchable_body(path: &Path, raw: &str) -> (String, String) {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if is_translation_cache(name) {
+        let lines = translated_lines(raw);
+        let body = lines.join("\n");
+        let title = if name.eq_ignore_ascii_case("layout-translate.json") {
+            path.parent()
+                .and_then(|dir| dir.parent())
+                .and_then(|dir| dir.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("translation")
+                .to_string()
+        } else {
+            name.trim_end_matches(".layout-translate.json")
+                .trim_end_matches(".layout-translate.JSON")
+                .to_string()
+        };
+        return (body, title);
+    }
+    let title = raw
         .lines()
-        .find_map(|l| l.trim().strip_prefix("# ").map(|s| s.trim().to_string()))
-        .filter(|s| !s.is_empty())
+        .find_map(|line| line.trim().strip_prefix("# ").map(|s| s.trim().to_string()))
+        .filter(|title| !title.is_empty())
         .unwrap_or_else(|| {
-            file.file_stem()
-                .and_then(|s| s.to_str())
+            path.file_stem()
+                .and_then(|name| name.to_str())
                 .unwrap_or("")
                 .to_string()
         });
+    (raw.to_string(), title)
+}
 
-    // First matching line → snippet + 1-based line number.
-    let mut line = 0u32;
-    let mut snippet = String::new();
-    for (i, raw) in content.lines().enumerate() {
-        let ll = raw.to_lowercase();
-        if terms.iter().any(|t| ll.contains(t.as_str())) {
-            line = (i + 1) as u32;
-            snippet = make_snippet(raw, terms);
-            break;
+fn is_translation_cache(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "layout-translate.json" || lower.ends_with(".layout-translate.json")
+}
+
+fn translated_lines(raw: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    collect_translated(&value, &mut lines);
+    lines
+}
+
+fn collect_translated(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::String(text)) = map.get("translated") {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+            }
+            for child in map.values() {
+                if child.is_object() || child.is_array() {
+                    collect_translated(child, out);
+                }
+            }
         }
-    }
-
-    let title_lower = title.to_lowercase();
-    let mut score: i64 = 0;
-    for t in terms {
-        if title_lower.contains(t.as_str()) {
-            score += 50;
+        serde_json::Value::Array(items) => {
+            for child in items {
+                collect_translated(child, out);
+            }
         }
-        let occ = lower.matches(t.as_str()).count().min(20) as i64;
-        score += occ;
+        _ => {}
     }
-    let fname = file.file_name().and_then(|s| s.to_str()).unwrap_or("");
-    if fname.eq_ignore_ascii_case("NOTES.md") || fname.eq_ignore_ascii_case("PAPER.md") {
-        score += 5;
-    }
-
-    Some(SearchHit {
-        paper_path: paper_folder_of(&rel),
-        path: rel,
-        title,
-        snippet,
-        line,
-        score,
-    })
 }
 
 /// Center a snippet on the earliest matching term, trimmed to [`SNIPPET_CHARS`].
@@ -206,6 +353,20 @@ fn make_snippet(raw: &str, terms: &[String]) -> String {
         s = format!("{s}…");
     }
     s
+}
+
+fn paper_path_for(rel: &str) -> Option<String> {
+    if let Some(folder) = rel.strip_suffix("/.src/layout-translate.json") {
+        if folder.starts_with("papers/") {
+            return Some(folder.to_string());
+        }
+    }
+    if let Some(folder) = rel.strip_suffix("/.src/citations.json") {
+        if folder.starts_with("papers/") {
+            return Some(folder.to_string());
+        }
+    }
+    paper_folder_of(rel)
 }
 
 /// Vault-relative paper folder for a md path under `papers/…`, else None.
@@ -273,6 +434,40 @@ mod tests {
         })
         .unwrap();
         assert!(out.hits.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn searches_hidden_translation_cache_without_indexing_raw_source() {
+        let root = std::env::temp_dir().join(format!(
+            "agentero-search-translation-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write(
+            &root,
+            "papers/attention/.src/layout-translate.json",
+            r#"{"items":[{"translated":"Hidden transformer result"}]}"#,
+        );
+        write(
+            &root,
+            "papers/attention/source/layout.json",
+            r#"{"regions":[{"text":"Hidden transformer result"}]}"#,
+        );
+
+        let out = vault_search(VaultSearchArgs {
+            vault_path: root.to_string_lossy().to_string(),
+            query: "hidden transformer".into(),
+            limit: None,
+        })
+        .unwrap();
+
+        assert_eq!(out.hits.len(), 1);
+        assert_eq!(
+            out.hits[0].path,
+            "papers/attention/.src/layout-translate.json"
+        );
+        assert_eq!(out.hits[0].paper_path.as_deref(), Some("papers/attention"));
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -238,7 +238,7 @@ impl rusqlite::types::FromSql for PaperKind {
     }
 }
 
-/// The single paper model: catalog row, `metadata.json` sidecar, IPC payload.
+/// The single paper model: catalog row, `.src/metadata.json` sidecar, IPC payload.
 /// JSON stays snake_case to match the frontend's `PaperMetadata`.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PaperRecord {
@@ -844,11 +844,18 @@ pub fn repair_duplicates(vault_root: &Path) -> Result<DuplicateRepairResult, App
 }
 
 /// Rebuild catalog rows by scanning `papers/` on disk.
-/// Detects paper folders by NOTES.md / metadata.json presence. Idempotent —
+/// Detects paper folders by NOTES.md / `.src/metadata.json` presence. Idempotent —
 /// disk-only papers are re-added (sidecar metadata preferred over a minimal
 /// folder-name record) and rows whose sidecar is newer are refreshed.
 /// Returns the count of rows written.
 pub fn rebuild_from_disk(vault_root: &Path) -> Result<usize, AppError> {
+    if let Err(e) = super::sidecar::migrate_legacy_sidecars(vault_root) {
+        log::warn!(
+            target: "agentero::catalog",
+            "paper metadata migration failed during rescan for {}: {e}",
+            vault_root.display()
+        );
+    }
     let papers_dir = vault_root.join("papers");
     if !papers_dir.is_dir() {
         return Ok(0);
@@ -857,7 +864,12 @@ pub fn rebuild_from_disk(vault_root: &Path) -> Result<usize, AppError> {
         let mut count = 0usize;
         let mut stack = vec![papers_dir];
         while let Some(dir) = stack.pop() {
-            if dir.join("NOTES.md").is_file() || dir.join(super::sidecar::SIDECAR_FILE).is_file() {
+            if dir.join("NOTES.md").is_file()
+                || dir
+                    .join(super::sidecar::SIDECAR_DIR)
+                    .join(super::sidecar::SIDECAR_FILE)
+                    .is_file()
+            {
                 // A paper folder is a leaf: reconcile and do not descend.
                 let rel = dir
                     .strip_prefix(vault_root)
@@ -1962,7 +1974,7 @@ mod tests {
         delete_under_path(&dir, "papers/x").unwrap();
         assert!(get_by_path(&dir, "papers/x").unwrap().is_none());
 
-        // Rescan restores the full row from the metadata.json sidecar.
+        // Rescan restores the full row from the `.src/metadata.json` sidecar.
         assert_eq!(rebuild_from_disk(&dir).unwrap(), 1);
         let row = get_by_path(&dir, "papers/x").unwrap().unwrap();
         assert_eq!(row.path, "papers/x");
@@ -1971,7 +1983,7 @@ mod tests {
         assert_eq!(row.year, Some(2017));
 
         // Without a sidecar, rescan falls back to a minimal folder-name row.
-        fs::remove_file(dir.join("papers/x/metadata.json")).unwrap();
+        fs::remove_file(dir.join("papers/x/.src/metadata.json")).unwrap();
         delete_under_path(&dir, "papers/x").unwrap();
         assert_eq!(rebuild_from_disk(&dir).unwrap(), 1);
         let row = get_by_path(&dir, "papers/x").unwrap().unwrap();
@@ -2034,7 +2046,7 @@ mod tests {
         // Simulate a failed import's aftermath: folder + sidecar exist, row lost.
         delete_under_path(&dir, "papers/x").unwrap();
 
-        // Heals from the metadata.json sidecar.
+        // Heals from the `.src/metadata.json` sidecar.
         let healed = ensure_row_for_path(&dir, "papers/x").unwrap().unwrap();
         assert_eq!(healed.title, "Attention");
         let row = get_by_path(&dir, "papers/x").unwrap().unwrap();
@@ -2045,7 +2057,7 @@ mod tests {
         assert_eq!(again.title, "Attention");
 
         // Without a sidecar, falls back to a minimal folder-name record.
-        fs::remove_file(paper_dir.join("metadata.json")).unwrap();
+        fs::remove_file(paper_dir.join(".src/metadata.json")).unwrap();
         delete_under_path(&dir, "papers/x").unwrap();
         let minimal = ensure_row_for_path(&dir, "papers/x").unwrap().unwrap();
         assert_eq!(minimal.title, "x");
@@ -2070,7 +2082,7 @@ mod tests {
         let persisted = upsert_paper(&dir, &unbound.at_path("\\papers\\x\\")).unwrap();
         assert_eq!(persisted.path, "papers/x");
         assert_eq!(get_by_path(&dir, "papers/x").unwrap().unwrap().title, "T");
-        assert!(dir.join("papers/x/metadata.json").is_file());
+        assert!(dir.join("papers/x/.src/metadata.json").is_file());
 
         let _ = fs::remove_dir_all(&dir);
     }

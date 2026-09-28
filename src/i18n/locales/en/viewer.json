@@ -47,7 +47,9 @@
 			"cancelQueue": "Cancel queue",
 			"queuedToast": "Full-text translation queued — waiting for layout analysis",
 			"startedAfterLayout": "Layout analysis finished — full-text translation started",
-			"parseFailedWhileWaiting": "Layout analysis failed; translation cancelled"
+			"parseFailedWhileWaiting": "Layout analysis failed; translation cancelled",
+			"progress": "Translated {{done}}/{{total}}",
+			"failedCount": "{{count}} failed"
 		},
 		"translation": {
 			"title": "Translation",

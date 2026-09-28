@@ -23,6 +23,11 @@ type PdfToolbarProps = {
 	layoutTranslateWaiting?: boolean;
 	layoutTranslateActive: boolean;
 	layoutTranslateLabel: string;
+	layoutTranslateProgress?: {
+		total: number;
+		done: number;
+		error: number;
+	};
 	onToggleLayoutTranslate: () => void;
 	/** True when viewing a remote paper that has no local sidecar. */
 	isRemotePaper?: boolean;
@@ -42,12 +47,29 @@ export function PdfToolbar({
 	layoutTranslateWaiting = false,
 	layoutTranslateActive,
 	layoutTranslateLabel,
+	layoutTranslateProgress,
 	onToggleLayoutTranslate,
 	isRemotePaper = false,
 	onImportToLibrary,
 	importBusy = false,
 }: PdfToolbarProps) {
 	const { t } = useTranslation("viewer");
+	const layoutTranslateProgressLabel =
+		layoutTranslateProgress && layoutTranslateProgress.total > 0
+			? `${t("pdf.layoutTranslate.progress", {
+					done: layoutTranslateProgress.done,
+					total: layoutTranslateProgress.total,
+				})}${
+					layoutTranslateProgress.error > 0
+						? ` · ${t("pdf.layoutTranslate.failedCount", {
+								count: layoutTranslateProgress.error,
+							})}`
+						: ""
+				}`
+			: null;
+	const layoutTranslateAriaLabel = layoutTranslateProgressLabel
+		? `${layoutTranslateLabel} · ${layoutTranslateProgressLabel}`
+		: layoutTranslateLabel;
 
 	const LONG_PRESS_MS = 300;
 	const longPressTimerRef = useRef<number | null>(null);
@@ -215,7 +237,7 @@ export function PdfToolbar({
 									}
 									className="shrink-0 self-center"
 									data-full-text-translate
-									aria-label={layoutTranslateLabel}
+									aria-label={layoutTranslateAriaLabel}
 									aria-pressed={layoutTranslateActive || layoutTranslateWaiting}
 									disabled={!engine}
 									onPointerDown={handleTranslatePointerDown}
@@ -235,6 +257,11 @@ export function PdfToolbar({
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
 								{layoutTranslateLabel}
+								{layoutTranslateProgressLabel ? (
+									<span className="ml-1 text-background/80">
+										· {layoutTranslateProgressLabel}
+									</span>
+								) : null}
 								{/* Inverted tooltip: mute via text-background, not muted-foreground. */}
 								<span className="ml-2 text-background/70">
 									{formatShortcutById("layoutTranslate")}

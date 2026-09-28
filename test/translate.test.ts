@@ -18,7 +18,12 @@ import {
 	resolveTranslateAgent,
 	targetLangDisplayName,
 } from "@/lib/translate";
-import { DEFAULT_TRANSLATE_SETTINGS } from "@/lib/translate/defaults";
+import {
+	clampLayoutTranslateConcurrency,
+	DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+	DEFAULT_TRANSLATE_SETTINGS,
+	LAYOUT_TRANSLATE_CONCURRENCY_OPTIONS,
+} from "@/lib/translate/defaults";
 
 describe("translate lang", () => {
 	it("resolves ui target from interface language", () => {
@@ -252,5 +257,19 @@ describe("translate prompts", () => {
 
 	it("default translate settings ship an empty custom prompt", () => {
 		expect(DEFAULT_TRANSLATE_SETTINGS.customPrompt).toBe("");
+	});
+
+	it("defaults PDF layout translation concurrency to two workers", () => {
+		expect(DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY).toBe(2);
+		expect(DEFAULT_TRANSLATE_SETTINGS.layoutTranslateConcurrency).toBe(2);
+		expect(LAYOUT_TRANSLATE_CONCURRENCY_OPTIONS).toEqual([1, 2, 3, 4, 6, 8]);
+	});
+
+	it("clamps PDF layout translation concurrency to integer values from one to eight", () => {
+		expect(clampLayoutTranslateConcurrency(Number.NaN)).toBe(2);
+		expect(clampLayoutTranslateConcurrency(0)).toBe(1);
+		expect(clampLayoutTranslateConcurrency(1.6)).toBe(2);
+		expect(clampLayoutTranslateConcurrency(8.4)).toBe(8);
+		expect(clampLayoutTranslateConcurrency(99)).toBe(8);
 	});
 });

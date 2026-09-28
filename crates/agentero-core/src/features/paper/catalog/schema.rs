@@ -133,6 +133,17 @@ pub fn catalog_db_path(vault_root: &Path) -> std::path::PathBuf {
 
 /// Ensure `.agentero/` exists, create/open catalog.sqlite, apply migrations.
 pub fn ensure_catalog(vault_root: &Path) -> Result<Connection, AppError> {
+    // Move paper metadata into the canonical hidden per-paper source folder
+    // before any catalog operation can discover or project paper rows. This
+    // migration is deliberately best-effort: failures preserve the legacy
+    // file and must not prevent the catalog itself from opening.
+    if let Err(e) = super::sidecar::migrate_legacy_sidecars(vault_root) {
+        log::warn!(
+            target: "agentero::catalog",
+            "paper metadata migration failed for {}: {e}",
+            vault_root.display()
+        );
+    }
     let agentero_dir = vault_root.join(".agentero");
     fs::create_dir_all(&agentero_dir)?;
 
@@ -442,6 +453,28 @@ mod tests {
         let conn2 = ensure_catalog(&dir).expect("reopen");
         assert_eq!(schema_version(&conn2).unwrap(), SCHEMA_VERSION);
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ensure_catalog_migrates_legacy_paper_metadata_before_open() {
+        let dir = env::temp_dir().join(format!(
+            "agentero-catalog-sidecar-migrate-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let paper = dir.join("papers/x");
+        fs::create_dir_all(&paper).unwrap();
+        fs::write(
+            paper.join("metadata.json"),
+            br#"{"id":"x","type":"article","title":"X","authors":[],"status":"completed","added_at":"t","updated_at":"t"}"#,
+        )
+        .unwrap();
+
+        let conn = ensure_catalog(&dir).expect("ensure");
+        drop(conn);
+        assert!(!paper.join("metadata.json").exists());
+        assert!(paper.join(".src/metadata.json").is_file());
         let _ = fs::remove_dir_all(&dir);
     }
 

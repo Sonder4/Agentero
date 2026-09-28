@@ -124,7 +124,11 @@ export function layoutSidecarPath(paperAbsPath: string): string {
 
 export function layoutIndexPath(paperAbsPath: string): string {
 	return joinVaultPath(
-		joinVaultPath(paperAbsPath, "source"),
+		joinVaultPath(paperAbsPath, ".src"),
+		// `layout.json` is the raw model output and stays under `source/`.
+		// The sidebar index is a rebuildable Agentero artifact, so keep it in
+		// the paper's hidden generated-data directory instead of mixing it with
+		// MinerU/LaTeX inputs.
 		LAYOUT_INDEX_FILE,
 	);
 }

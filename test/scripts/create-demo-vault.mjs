@@ -6,7 +6,7 @@
  * - Paper folders as minimal units (flat + nested under papers/)
  * - Loose PDFs / images outside papers/ (center-pane preview fixtures)
  * - Catalog SQLite schema_version = 3 (matches Host schema.rs)
- * - Optional metadata.json for transition / external tools
+ * - Optional .src/metadata.json for paper metadata
  *
  * Usage:
  *   node test/scripts/create-demo-vault.mjs [path]
@@ -641,8 +641,8 @@ async function scaffoldDemo(root) {
 
 	for (const paper of PAPERS) {
 		await writeText(root, `${paper.path}/NOTES.md`, paper.notes);
-		await writeText(root, `${paper.path}/metadata.json`, demoMeta(paper));
-		await ensureDir(root, `${paper.path}/source`);
+		await writeText(root, `${paper.path}/.src/metadata.json`, demoMeta(paper));
+		await ensureDir(root, `${paper.path}/.src`);\n\t\tawait ensureDir(root, `${paper.path}/source`);
 		await writeText(
 			root,
 			`${paper.path}/source/.gitkeep`,
@@ -835,7 +835,7 @@ async function collectPaperFolders(root) {
 		const names = new Set(entries.map((e) => e.name.toLowerCase()));
 		const isPaper =
 			names.has("notes.md") ||
-			names.has("metadata.json") ||
+			names.has(".src") ||
 			names.has("source") ||
 			names.has("marks");
 		if (isPaper && rel.startsWith("papers/")) {

@@ -16,7 +16,9 @@ type NameKind = {
 };
 
 const PAPER_FILE_MARKERS = new Set(["notes.md", "paper.md"]);
-const PAPER_DIR_MARKERS = new Set(["source", "assets", "marks"]);
+// `.src` is hidden in the file tree but is still a canonical paper marker:
+// metadata and generated sidecars live there.
+const PAPER_DIR_MARKERS = new Set([".src", "source", "assets", "marks"]);
 
 function isDirectoryEntry(entry: NameKind): boolean {
 	const lower = entry.name.toLowerCase();

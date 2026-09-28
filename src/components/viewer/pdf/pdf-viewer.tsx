@@ -908,6 +908,8 @@ function PdfViewerInner({
 		layoutTranslateWaiting,
 		layoutTranslateActive,
 		layoutTranslateLabel,
+		layoutTranslateProgress,
+		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,
 	} = usePdfLayoutCluster({
@@ -918,6 +920,7 @@ function PdfViewerInner({
 		paperAbsPath,
 		paperRelPath,
 		paperKey,
+		paperObjectId: paperMeta?.id ?? null,
 		vaultPath,
 		layoutCap,
 		layoutCapRef,
@@ -962,6 +965,13 @@ function PdfViewerInner({
 	layoutTranslateActiveRef.current = layoutTranslateActive;
 	const layoutTranslateRunningRef = useRef(layoutTranslateRunning);
 	layoutTranslateRunningRef.current = layoutTranslateRunning;
+	const layoutTranslateIncomplete =
+		layoutTranslateProgress.pending +
+			layoutTranslateProgress.error +
+			layoutTranslateProgress.skipped >
+		0;
+	const layoutTranslateIncompleteRef = useRef(layoutTranslateIncomplete);
+	layoutTranslateIncompleteRef.current = layoutTranslateIncomplete;
 	useEffect(() => {
 		if (!translationPane) return;
 		const hasRegions = (layoutRawRegions?.length ?? 0) > 0;
@@ -973,9 +983,13 @@ function PdfViewerInner({
 			hadLayoutRegionsRef.current = false;
 		}
 		if (!hasRegions) return;
+		if (!layoutTranslateCacheReady) return;
 		if (translationAutoStartedRef.current) return;
 		// Hydrate already painted cached translations (or a running job).
-		if (layoutTranslateActive || layoutTranslateRunning) {
+		if (
+			layoutTranslateRunning ||
+			(layoutTranslateActive && !layoutTranslateIncomplete)
+		) {
 			translationAutoStartedRef.current = true;
 			return;
 		}
@@ -983,8 +997,9 @@ function PdfViewerInner({
 		const timer = window.setTimeout(() => {
 			if (translationAutoStartedRef.current) return;
 			if (
-				layoutTranslateActiveRef.current ||
-				layoutTranslateRunningRef.current
+				layoutTranslateRunningRef.current ||
+				(layoutTranslateActiveRef.current &&
+					!layoutTranslateIncompleteRef.current)
 			) {
 				translationAutoStartedRef.current = true;
 				return;
@@ -998,6 +1013,8 @@ function PdfViewerInner({
 		layoutRawRegions,
 		layoutTranslateActive,
 		layoutTranslateRunning,
+		layoutTranslateIncomplete,
+		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 	]);
 
@@ -1641,6 +1658,7 @@ function PdfViewerInner({
 					layoutTranslateWaiting={layoutTranslateWaiting}
 					layoutTranslateActive={layoutTranslateActive}
 					layoutTranslateLabel={layoutTranslateLabel}
+					layoutTranslateProgress={layoutTranslateProgress}
 					onToggleLayoutTranslate={handleToggleLayoutTranslateWithDualPane}
 					isRemotePaper={isRemotePaper}
 					onImportToLibrary={handleImportToLibrary}

@@ -339,7 +339,7 @@ pub struct PaperSetTagsArgs {
     pub tags: Vec<papers::PaperTag>,
 }
 
-/// Replace catalog tags for a paper (syncs metadata.json projection).
+/// Replace catalog tags for a paper (syncs `.src/metadata.json` projection).
 #[tauri::command]
 #[specta::specta]
 pub async fn paper_set_tags(args: PaperSetTagsArgs) -> ApiResult<PaperRecord> {
@@ -370,7 +370,7 @@ pub struct PaperRescanResult {
     pub count: usize,
 }
 
-/// Rebuild catalog rows from `papers/` metadata.json — recovers papers that are
+/// Rebuild catalog rows from `papers/` `.src/metadata.json` — recovers papers that are
 /// on disk but missing from the catalog (added externally, or a lost row).
 #[tauri::command]
 #[specta::specta]

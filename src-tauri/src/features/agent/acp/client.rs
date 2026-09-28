@@ -719,6 +719,41 @@ mod cwd_shell_wrap_tests {
     }
 
     #[test]
+    fn plan_local_launch_strips_extended_windows_entry_path() {
+        fn bundled_extended(
+            _template_id: &str,
+            _child_env: &HashMap<String, String>,
+        ) -> Option<(
+            PathBuf,
+            crate::features::agent::registry::bundled::BundledAdapter,
+        )> {
+            Some((
+                PathBuf::from("/fake/node"),
+                crate::features::agent::registry::bundled::BundledAdapter {
+                    entry_js: PathBuf::from(
+                        r"\\?\D:\Agentero\adapters\node_modules\@agentclientprotocol\claude-agent-acp\dist\index.js",
+                    ),
+                    version: "0.0.0-test".to_string(),
+                    node_major: Some(22),
+                },
+            ))
+        }
+
+        let (_tmp, mut env) = fake_agent_bin(&[]);
+        let mut desc = descriptor(AgentTemplate::Custom);
+        desc.command = "nowhere-agent".to_string();
+        let (launch_desc, command) = plan_local_launch_with(&desc, &mut env, bundled_extended);
+        assert_eq!(command, PathBuf::from("/fake/node"));
+        assert_eq!(
+            launch_desc.args,
+            vec![
+                r"D:\Agentero\adapters\node_modules\@agentclientprotocol\claude-agent-acp\dist\index.js"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn plan_local_launch_falls_back_to_bundled_with_descriptor_args() {
         // Bundled entry is prepended before the descriptor's own args.
         let (_tmp, mut env) = fake_agent_bin(&[]);

@@ -108,7 +108,7 @@ describe("citation destination keys", () => {
 			// than hyperref `cite.<key>` — skip when this fixture has no cites.
 			if (map.size === 0) return;
 			const sidecar = JSON.parse(
-				readFileSync(`${dir}/source/agentero-cite.json`, "utf8"),
+				readFileSync(`${dir}/.src/citations.json`, "utf8"),
 			);
 			const rawKeys = new Set(
 				sidecar.citations
@@ -660,7 +660,7 @@ describe("ACS paper link-rect crossrefs", () => {
 			expect(ref64).toBeTruthy();
 
 			const sidecar = JSON.parse(
-				readFileSync(`${dir}/source/agentero-cite.json`, "utf8"),
+				readFileSync(`${dir}/.src/citations.json`, "utf8"),
 			) as { citations: { id: string; rawKey?: string }[] };
 			const keys = new Set(citationSidecarKeysForDest("mk:ref1"));
 			const matched = sidecar.citations.find(

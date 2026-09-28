@@ -376,7 +376,7 @@ lookup:search 被调用
 ## 5. 数据映射：Translator Item → `PaperRecord`（直接并入）
 
 Translator 输出的 **Zotero API JSON Item** 经 `map_zotero_item_to_record`（`features/paper/import/api_mapper.rs`）**直接写入** `PaperRecord` / catalog 列，**不再**先落到另一套 arXiv 专用结构。  
-`PaperRecord`（`features/paper/catalog/papers.rs`）是 Rust 侧唯一论文模型：同时充当 catalog SQLite 行、`papers/<id>/metadata.json` sidecar 投影与 IPC 出参。前端 `src/lib/paper/types.ts` 的 `PaperMetadata` 只是 specta 生成的 `PaperRecord_Serialize` 的派生别名，不是独立模型。  
+`PaperRecord`（`features/paper/catalog/papers.rs`）是 Rust 侧唯一论文模型：同时充当 catalog SQLite 行、`papers/<id>/.src/metadata.json` sidecar 投影与 IPC 出参。前端 `src/lib/paper/types.ts` 的 `PaperMetadata` 只是 specta 生成的 `PaperRecord_Serialize` 的派生别名，不是独立模型。  
 catalog **schema v2** 起补齐期刊/卷期页等字段（见 [`catalog.md`](catalog.md) §4.2）。
 
 ### 5.1 字段对照（Item → record）

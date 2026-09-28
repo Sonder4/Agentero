@@ -237,6 +237,9 @@ pub struct TranslateSettings {
     pub auto_translate_selection: bool,
     #[serde(default)]
     pub dual_pane_translate: bool,
+    /// Number of PDF layout translation workers (clamped to 1..=8).
+    #[serde(default = "default_layout_translate_concurrency")]
+    pub layout_translate_concurrency: u8,
     #[serde(default)]
     pub agent_id: String,
     #[serde(default)]
@@ -257,6 +260,7 @@ impl Default for TranslateSettings {
             provider_configs: HashMap::new(),
             auto_translate_selection: false,
             dual_pane_translate: false,
+            layout_translate_concurrency: default_layout_translate_concurrency(),
             agent_id: String::new(),
             model_id: String::new(),
             custom_prompt: String::new(),
@@ -471,6 +475,9 @@ fn default_translate_target() -> String {
 }
 fn default_translate_source() -> String {
     "auto".into()
+}
+fn default_layout_translate_concurrency() -> u8 {
+    2
 }
 /// Layout analysis stays on the bundled offline PP-DocLayoutV3 model: it is
 /// free, local, and a cloud backend would bill every PDF for no gain. The
@@ -1103,6 +1110,7 @@ fn normalize(s: &mut AppSettings) {
     // on every request. No trim: leading whitespace may be intentional (the
     // settings UI trims on blur, same as agent_personal_prompt).
     s.translate.custom_prompt = s.translate.custom_prompt.chars().take(8000).collect();
+    s.translate.layout_translate_concurrency = s.translate.layout_translate_concurrency.clamp(1, 8);
 
     const LAYOUT_BACKENDS: &[&str] = &["local", "paddle", "mineru"];
     if !LAYOUT_BACKENDS.contains(&s.layout.backend.as_str()) {

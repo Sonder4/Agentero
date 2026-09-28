@@ -197,6 +197,15 @@ function createHarness() {
 			serviceKey: "test",
 		}),
 		readLayoutTranslateSidecar: async () => null,
+		readLayoutTranslateGlossary: async () => ({
+			terms: [],
+			contentHash: "empty",
+		}),
+		glossaryContentHash: () => "empty",
+		readLayoutTranslateState: async () => null,
+		usedGlossaryTermHashes: () => ({}),
+		isLayoutTranslateUnitStaleForGlossary: () => false,
+		writeLayoutTranslateState: async () => undefined,
 		applyLayoutTranslateSidecar: (items: Item[]) => items,
 		hasPendingLayoutTranslateItems: (items: Item[]) =>
 			items.some((item) => item.status !== "done" || !item.translated?.trim()),
@@ -211,6 +220,10 @@ function createHarness() {
 		},
 		persistLayoutTranslateSidecarBestEffort: (...args: unknown[]) =>
 			writes.push(args),
+		writeLayoutTranslateSidecar: (...args: unknown[]) => {
+			writes.push(args);
+			return Promise.resolve();
+		},
 		normalizeLayoutPaperKey: (path: string) =>
 			path.replace(/[/\\]+$/, "").replace(/\\/g, "/"),
 		enqueuePaperLayoutAnalysis: (...args: unknown[]) => enqueues.push(args),

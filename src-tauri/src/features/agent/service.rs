@@ -24,6 +24,32 @@ use crate::features::agent::{
 };
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// Cross-window safety limit for bulk PDF translation. The renderer chooses a
+/// smaller per-paper pool, while this guard prevents duplicate windows from
+/// exceeding the supported ACP pressure globally.
+pub struct PdfLayoutTranslationLimiter {
+    semaphore: Arc<Semaphore>,
+}
+
+impl PdfLayoutTranslationLimiter {
+    pub fn new() -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(8)),
+        }
+    }
+
+    async fn acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.semaphore.clone().acquire_owned().await.ok()
+    }
+}
+
+impl Default for PdfLayoutTranslationLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub fn list_from_state(state: AgentRegistryState) -> AgentListResponse {
     AgentListResponse {
@@ -210,6 +236,12 @@ pub async fn accept_run_once(
     // Pooled warm connections live in managed state so run_once can skip the
     // spawn → initialize → session/new cold chain when a healthy slot matches.
     let warm_pool = Arc::clone(window.app_handle().state::<Arc<AgentWarmPool>>().inner());
+    let translation_limiter = window
+        .app_handle()
+        .state::<Arc<PdfLayoutTranslationLimiter>>()
+        .inner()
+        .clone();
+    let is_layout_translation = request.workflow.as_deref() == Some("pdf-layout-translate");
     let permission_policy = match request.permission_mode.as_deref() {
         Some("auto") => PermissionPolicy::Auto,
         Some("ask") => PermissionPolicy::Ask,
@@ -222,6 +254,11 @@ pub async fn accept_run_once(
     let session_agent_id = log_agent_id.clone();
     let remote_for_spawn = remote_target_early;
     tauri::async_runtime::spawn(async move {
+        let _translation_permit = if is_layout_translation {
+            translation_limiter.acquire().await
+        } else {
+            None
+        };
         let run_result = run_once(RunOnceParams {
             app: events.clone(),
             desc,

@@ -134,7 +134,7 @@ fn resolve_paper_dir(vault: &Path, path: &str) -> Result<PathBuf, AppError> {
 
 fn is_paper_folder(dir: &Path) -> bool {
     dir.join("NOTES.md").is_file()
-        || dir.join("metadata.json").is_file()
+        || dir.join(".src").join("metadata.json").is_file()
         || dir.join("PAPER.md").is_file()
 }
 
@@ -240,7 +240,7 @@ fn resolve_layout_index_by_number(
     let item = matches.into_iter().next().ok_or_else(|| {
         AppError::domain(
             "citation_region_not_found",
-            format!("no {section} {n} found in {paper_path}/source/layout-index.json"),
+            format!("no {section} {n} found in {paper_path}/.src/layout-index.json"),
         )
     })?;
     Ok(item.into())
@@ -588,7 +588,9 @@ mod tests {
     }
 
     fn write_index(paper: &Path, body: &str) {
-        fs::write(paper.join("source").join("layout-index.json"), body).unwrap();
+        let generated = paper.join(".src");
+        fs::create_dir_all(&generated).unwrap();
+        fs::write(generated.join("layout-index.json"), body).unwrap();
     }
 
     #[test]

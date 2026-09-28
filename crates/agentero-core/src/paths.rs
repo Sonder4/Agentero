@@ -85,6 +85,21 @@ pub fn feeds_db_path() -> PathBuf {
     agentero_data_dir().join("feeds.sqlite")
 }
 
+/// Device-local Web AI conversation bindings and provider metadata.
+pub fn web_ai_db_path() -> PathBuf {
+    agentero_data_dir().join("web_ai.sqlite")
+}
+
+/// Persistent profile root for logged-in provider WebViews.
+pub fn web_ai_profiles_dir() -> PathBuf {
+    agentero_data_dir().join("web-ai").join("profiles")
+}
+
+/// Short-lived files staged for Web AI attachment transfers.
+pub fn web_ai_scratch_dir() -> PathBuf {
+    agentero_cache_dir().join("web-ai").join("scratch")
+}
+
 /// ONNX / other large assets: `$XDG_CACHE_HOME/agentero/models`.
 pub fn agentero_models_dir() -> PathBuf {
     agentero_cache_dir().join("models")

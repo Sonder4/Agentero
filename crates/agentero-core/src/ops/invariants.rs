@@ -33,7 +33,7 @@ Never dump an entire PDF/TeX/body into context by default.
 
 - Confirm with the user before overwriting user-written `NOTES.md` or any other file (`replace`). Prefer `append` when unsure.
 - MCP `file_read` / `file_write` take a vault-relative path (`drafts/main.tex`, `notes/idea.md`). They are UTF-8 text only. `file_list` is one directory. Do not use them for `.agentero`, binaries, LaTeX build artifacts, marks, or layout indexes. `NOTES.md` writes still go through `paper_notes_write`.
-- Do not hand-edit `{paper}/marks/annotations.json` or `{paper}/source/layout-index.json`.
+- Do not hand-edit `{paper}/marks/annotations.json` or `{paper}/.src/layout-index.json`.
 - Do not invent catalog metadata, layout bboxes, or mark coordinates. On `mark_locate_failed`, retry with a longer verbatim quote — never guess rects.
 - If `layout_index_missing`, ask the user to open the paper in Agentero and run layout analysis; do not invent regions.
 - Destructive deletes require explicit confirmation (`-y` / `--yes` on CLI).

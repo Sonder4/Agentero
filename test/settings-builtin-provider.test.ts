@@ -81,6 +81,32 @@ describe("defaults (browser-dev, no Host key)", () => {
 	it("defaults the embedding source to custom", () => {
 		expect(DEFAULT_SETTINGS.embedding.source).toBe("custom");
 	});
+
+	it("normalizes PDF layout translation concurrency when loading settings", () => {
+		applyExternalSettings({
+			...DEFAULT_SETTINGS,
+			translate: {
+				...DEFAULT_TRANSLATE_SETTINGS,
+				layoutTranslateConcurrency: 99,
+			},
+		} as unknown as AppSettings);
+		expect(loadSettings().translate.layoutTranslateConcurrency).toBe(8);
+
+		applyExternalSettings({
+			...DEFAULT_SETTINGS,
+			translate: {
+				...DEFAULT_TRANSLATE_SETTINGS,
+				layoutTranslateConcurrency: 0,
+			},
+		} as unknown as AppSettings);
+		expect(loadSettings().translate.layoutTranslateConcurrency).toBe(1);
+
+		applyExternalSettings({
+			...DEFAULT_SETTINGS,
+			translate: DEFAULT_TRANSLATE_SETTINGS,
+		} as unknown as AppSettings);
+		expect(loadSettings().translate.layoutTranslateConcurrency).toBe(2);
+	});
 });
 
 describe("embedding source migration", () => {

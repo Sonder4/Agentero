@@ -5,7 +5,7 @@
 
 ## 问题
 
-`papers/` 下的目录原先只要直接包含 `NOTES.md`、`PAPER.md`、`metadata.json`
+`papers/` 下的目录原先只要直接包含 `NOTES.md`、`PAPER.md`、`.src/metadata.json`
 或 `source/` / `assets/` / `marks/`，就会被标记为论文目录。论文目录在文件树中是叶节点，
 因此不会继续展示子目录。
 
@@ -16,7 +16,7 @@ papers/rubric/
 ├── NOTES.md                 # 组织级文献索引
 ├── 2601.04171/
 │   ├── NOTES.md
-│   └── metadata.json
+│   └── .src/metadata.json
 └── 2601.15808/
     ├── NOTES.md
     └── metadata.json

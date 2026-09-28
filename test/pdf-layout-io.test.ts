@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { layoutSidecarPath, parseLayoutSidecar } from "@/lib/pdf/layout/io";
+import {
+	layoutIndexPath,
+	layoutSidecarPath,
+	parseLayoutSidecar,
+} from "@/lib/pdf/layout/io";
 
 describe("layout sidecar", () => {
 	it("stores under the paper source folder", () => {
@@ -9,6 +13,15 @@ describe("layout sidecar", () => {
 		);
 		expect(layoutSidecarPath("C:\\vault\\papers\\demo")).toBe(
 			"C:\\vault\\papers\\demo\\source\\layout.json",
+		);
+	});
+
+	it("stores the derived sidebar index under the hidden generated folder", () => {
+		expect(layoutIndexPath("/vault/papers/demo")).toBe(
+			"/vault/papers/demo/.src/layout-index.json",
+		);
+		expect(layoutIndexPath("C:\\vault\\papers\\demo")).toBe(
+			"C:\\vault\\papers\\demo\\.src\\layout-index.json",
 		);
 	});
 

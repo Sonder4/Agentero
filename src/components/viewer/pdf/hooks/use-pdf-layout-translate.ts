@@ -25,20 +25,38 @@ import {
 	applyLayoutTranslateSidecar,
 	currentLayoutTranslateCacheKey,
 	enqueuePaperLayoutAnalysis,
+	glossaryContentHash,
 	groupLayoutTranslateItemsByPage,
 	hasPendingLayoutTranslateItems,
+	isLayoutTranslateUnitStaleForGlossary,
+	type LayoutTranslateGlossaryTerm,
 	type LayoutTranslateItem,
 	type LayoutTranslateJobStatus,
+	type LayoutTranslateState,
 	layoutAnalysisStore,
 	listTranslatableLayoutRegions,
 	normalizeLayoutPaperKey,
 	type PdfLayoutRegion,
 	persistLayoutTranslateSidecarBestEffort,
+	readLayoutTranslateGlossary,
 	readLayoutTranslateSidecar,
+	readLayoutTranslateState,
 	runLayoutRegionTranslate,
 	toLayoutTranslateItems,
+	usedGlossaryTermHashes,
+	writeLayoutTranslateSidecar,
+	writeLayoutTranslateState,
 } from "@/lib/pdf/layout";
 import { displayTranslateError } from "@/lib/translate";
+
+function sourceContentHash(source: string): string {
+	let hash = 0x811c9dc5;
+	for (let index = 0; index < source.length; index += 1) {
+		hash ^= source.charCodeAt(index);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(36);
+}
 
 export type UsePdfLayoutTranslateOptions = {
 	docId: string;
@@ -52,6 +70,8 @@ export type UsePdfLayoutTranslateOptions = {
 	paperRelPath?: string | null;
 	/** Stable paper identifier for per-document Agent session reuse. */
 	paperKey?: string | null;
+	/** Catalog metadata id; stable when the paper folder is moved. */
+	paperObjectId?: string | null;
 	/** Vault root passed to the Agent as its cwd. */
 	vaultPath?: string | null;
 };
@@ -65,13 +85,31 @@ export type PdfLayoutTranslate = {
 	/** One-page tag state, keyed by 0-based page index. */
 	layoutTranslatePageStateByPage: ReadonlyMap<
 		number,
-		{ active: boolean; running: boolean }
+		{
+			active: boolean;
+			running: boolean;
+			pending: boolean;
+			done: boolean;
+			error: boolean;
+			doneCount: number;
+			totalCount: number;
+		}
 	>;
+	layoutTranslateProgress: {
+		total: number;
+		pending: number;
+		running: number;
+		done: number;
+		error: number;
+		skipped: number;
+	};
 	layoutTranslateRunning: boolean;
 	/** Queued behind layout analysis; toolbar shows the waiting state. */
 	layoutTranslateWaiting: boolean;
 	/** Running, or finished with overlays still painted. */
 	layoutTranslateActive: boolean;
+	/** Sidecar hydration has completed for the current paper. */
+	layoutTranslateCacheReady: boolean;
 	/** Toolbar button label for the current job phase. */
 	layoutTranslateLabel: string;
 	/** Toolbar button: start → stop → retry incomplete / clear complete. */
@@ -135,6 +173,53 @@ function resetRunningTranslateItems(
 	);
 }
 
+async function invalidateChangedGlossaryItems(
+	items: readonly LayoutTranslateItem[],
+	paperAbsPath: string | null | undefined,
+	objectId: string | null | undefined,
+	onGlossary?: (terms: readonly LayoutTranslateGlossaryTerm[]) => void,
+): Promise<LayoutTranslateItem[]> {
+	if (!paperAbsPath) return items.map((item) => ({ ...item }));
+	const key = currentLayoutTranslateCacheKey();
+	const [glossary, state] = await Promise.all([
+		readLayoutTranslateGlossary(
+			paperAbsPath,
+			objectId ?? paperAbsPath,
+			key.sourceLang,
+			key.targetLang,
+		),
+		readLayoutTranslateState(paperAbsPath),
+	]);
+	onGlossary?.(glossary.terms);
+	if (
+		!state ||
+		state.objectId !== (objectId ?? paperAbsPath) ||
+		state.cacheKey.providerId !== key.providerId ||
+		state.cacheKey.sourceLang !== key.sourceLang ||
+		state.cacheKey.targetLang !== key.targetLang ||
+		state.cacheKey.serviceKey !== key.serviceKey
+	) {
+		return items.map((item) => ({ ...item }));
+	}
+	return items.map((item) => {
+		if (
+			!isLayoutTranslateUnitStaleForGlossary(
+				state.units[item.id],
+				item.source,
+				glossary.terms,
+			)
+		) {
+			return { ...item };
+		}
+		return {
+			...item,
+			status: "pending" as const,
+			translated: undefined,
+			error: undefined,
+		};
+	});
+}
+
 export function usePdfLayoutTranslate({
 	docId,
 	layoutRawRegions,
@@ -142,9 +227,11 @@ export function usePdfLayoutTranslate({
 	paperAbsPath,
 	paperRelPath,
 	paperKey,
+	paperObjectId,
 	vaultPath,
 }: UsePdfLayoutTranslateOptions): PdfLayoutTranslate {
 	const { t } = useTranslation("viewer");
+	void translationPane;
 	/** Progressive layout bulk-translate overlays (body text / abstract / header). */
 	const [layoutTranslateJob, setLayoutTranslateJob] = useState<{
 		status: LayoutTranslateJobStatus;
@@ -154,6 +241,70 @@ export function usePdfLayoutTranslate({
 	layoutTranslateJobRef.current = layoutTranslateJob;
 	const layoutTranslateAbortRef = useRef<AbortController | null>(null);
 	const hiddenPageIndexesRef = useRef(new Set<number>());
+	const hiddenDocumentRef = useRef(false);
+	const cacheHydrationPathRef = useRef<string | null>(null);
+	const stateRunIdRef = useRef(`${docId}:${Date.now()}`);
+	const stateWriteRef = useRef<Promise<void>>(Promise.resolve());
+	const glossaryTermsRef = useRef<readonly LayoutTranslateGlossaryTerm[]>([]);
+	const translationObjectId = paperObjectId ?? paperKey ?? paperAbsPath;
+	const [layoutTranslateCacheReady, setLayoutTranslateCacheReady] = useState(
+		!paperAbsPath,
+	);
+	const queueStateWrite = useCallback(
+		(items: readonly LayoutTranslateItem[], runId = stateRunIdRef.current) => {
+			if (!paperAbsPath) return stateWriteRef.current;
+			const cacheKey = currentLayoutTranslateCacheKey();
+			stateWriteRef.current = stateWriteRef.current
+				.catch(() => undefined)
+				.then(async () => {
+					const glossary = await readLayoutTranslateGlossary(
+						paperAbsPath,
+						translationObjectId ?? "paper",
+						cacheKey.sourceLang,
+						cacheKey.targetLang,
+					);
+					glossaryTermsRef.current = glossary.terms;
+					const now = new Date().toISOString();
+					const state: LayoutTranslateState = {
+						schemaVersion: 1,
+						runId,
+						objectType: "paper",
+						objectId: translationObjectId ?? "paper",
+						cacheKey: {
+							providerId: cacheKey.providerId,
+							sourceLang: cacheKey.sourceLang,
+							targetLang: cacheKey.targetLang,
+							serviceKey: cacheKey.serviceKey,
+							glossaryHash: glossaryContentHash(glossary.terms),
+						},
+						units: Object.fromEntries(
+							items.map((item) => [
+								item.id,
+								{
+									sourceHash: sourceContentHash(item.source),
+									regionIds: [item.id],
+									status: item.status,
+									attempts: item.status === "running" ? 1 : 0,
+									usedTermHashes: usedGlossaryTermHashes(
+										item.source,
+										glossary.terms,
+									),
+									lastError: item.error ?? null,
+									updatedAt: now,
+								},
+							]),
+						),
+						updatedAt: now,
+					};
+					await writeLayoutTranslateState(paperAbsPath, state);
+				})
+				.catch(() => undefined);
+			return stateWriteRef.current;
+		},
+		[paperAbsPath, translationObjectId],
+	);
+	/** Bumps when a page is hidden or shown without changing stored items. */
+	const [hiddenRevision, setHiddenRevision] = useState(0);
 	/** Queued target to auto-start once layout regions land. */
 	const layoutTranslateWaitTargetRef = useRef<LayoutTranslateWaitTarget | null>(
 		null,
@@ -217,7 +368,8 @@ export function usePdfLayoutTranslate({
 		layoutTranslateAbortRef.current?.abort();
 		layoutTranslateAbortRef.current = null;
 		hiddenPageIndexesRef.current.clear();
-		setLayoutTranslateJob({ status: "idle", items: [] });
+		hiddenDocumentRef.current = true;
+		setHiddenRevision((revision) => revision + 1);
 	}, []);
 
 	// `runLayoutRegionTranslate` settles per-chain errors into item state instead
@@ -296,10 +448,19 @@ export function usePdfLayoutTranslate({
 			layoutTranslateJobRef.current.items,
 		);
 		setLayoutTranslateJob({ status: "running", items: pendingItems });
+		hiddenDocumentRef.current = false;
 		void (async () => {
 			const sidecar = await readLayoutTranslateSidecar(paperAbsPath, cacheKey);
 			if (ac.signal.aborted) return;
-			const items = applyLayoutTranslateSidecar(pendingItems, sidecar);
+			const items = await invalidateChangedGlossaryItems(
+				applyLayoutTranslateSidecar(pendingItems, sidecar),
+				paperAbsPath,
+				translationObjectId,
+				(terms) => {
+					glossaryTermsRef.current = terms;
+				},
+			);
+			if (ac.signal.aborted) return;
 			const needsRun = hasPendingLayoutTranslateItems(items);
 			setLayoutTranslateJob({
 				status: needsRun ? "running" : "done",
@@ -311,9 +472,13 @@ export function usePdfLayoutTranslate({
 				signal: ac.signal,
 				paperKey,
 				vaultPath,
+				paperAbsPath,
+				paperObjectId: translationObjectId,
+				contextRegions: layoutRawRegions,
 				onUpdate: (next) => {
 					if (ac.signal.aborted) return;
 					persistLayoutTranslateSidecarBestEffort(paperAbsPath, cacheKey, next);
+					void queueStateWrite(next);
 					setLayoutTranslateJob((prev) => ({
 						status: prev.status === "cancelled" ? "cancelled" : "running",
 						items: applyHiddenPages(next),
@@ -323,11 +488,8 @@ export function usePdfLayoutTranslate({
 			// Cancellation/replacement owns the visible state now. A late result
 			// must not restore cleared overlays or overwrite a newer sidecar write.
 			if (ac.signal.aborted || layoutTranslateAbortRef.current !== ac) return;
-			persistLayoutTranslateSidecarBestEffort(
-				paperAbsPath,
-				cacheKey,
-				finalItems,
-			);
+			await writeLayoutTranslateSidecar(paperAbsPath, cacheKey, finalItems);
+			void queueStateWrite(finalItems);
 			notifyTranslateItemErrors(finalItems);
 			setLayoutTranslateJob({
 				status: hasPendingLayoutTranslateItems(finalItems) ? "partial" : "done",
@@ -351,11 +513,13 @@ export function usePdfLayoutTranslate({
 	}, [
 		layoutRawRegions,
 		paperAbsPath,
-		paperKey,
+		translationObjectId,
 		vaultPath,
 		applyHiddenPages,
 		enterWaitingLayout,
 		notifyTranslateItemErrors,
+		paperKey,
+		queueStateWrite,
 		t,
 	]);
 
@@ -392,13 +556,22 @@ export function usePdfLayoutTranslate({
 					pendingItems,
 				),
 			}));
+			hiddenDocumentRef.current = false;
 			void (async () => {
 				const sidecar = await readLayoutTranslateSidecar(
 					paperAbsPath,
 					cacheKey,
 				);
 				if (ac.signal.aborted) return;
-				const pageItems = applyLayoutTranslateSidecar(pendingItems, sidecar);
+				const pageItems = await invalidateChangedGlossaryItems(
+					applyLayoutTranslateSidecar(pendingItems, sidecar),
+					paperAbsPath,
+					translationObjectId,
+					(terms) => {
+						glossaryTermsRef.current = terms;
+					},
+				);
+				if (ac.signal.aborted) return;
 				const needsRun = hasPendingLayoutTranslateItems(pageItems);
 				setLayoutTranslateJob((prev) => {
 					const merged = mergeTranslatePageItems(
@@ -421,6 +594,9 @@ export function usePdfLayoutTranslate({
 					signal: ac.signal,
 					paperKey,
 					vaultPath,
+					paperAbsPath,
+					paperObjectId: translationObjectId,
+					contextRegions: layoutRawRegions,
 					onUpdate: (next) => {
 						if (ac.signal.aborted) return;
 						persistLayoutTranslateSidecarBestEffort(
@@ -432,6 +608,7 @@ export function usePdfLayoutTranslate({
 								replacePageIndexes: [pageIndex],
 							},
 						);
+						void queueStateWrite(next);
 						setLayoutTranslateJob((prev) => ({
 							status: prev.status === "cancelled" ? "cancelled" : "running",
 							items: applyHiddenPages(
@@ -442,7 +619,7 @@ export function usePdfLayoutTranslate({
 				});
 				// Only the current live run may publish or persist its final result.
 				if (ac.signal.aborted || layoutTranslateAbortRef.current !== ac) return;
-				persistLayoutTranslateSidecarBestEffort(
+				await writeLayoutTranslateSidecar(
 					paperAbsPath,
 					cacheKey,
 					finalPageItems,
@@ -451,6 +628,7 @@ export function usePdfLayoutTranslate({
 						replacePageIndexes: [pageIndex],
 					},
 				);
+				void queueStateWrite(finalPageItems);
 				notifyTranslateItemErrors(finalPageItems);
 				setLayoutTranslateJob((prev) => {
 					const merged = mergeTranslatePageItems(
@@ -484,11 +662,13 @@ export function usePdfLayoutTranslate({
 		[
 			layoutRawRegions,
 			paperAbsPath,
-			paperKey,
+			translationObjectId,
 			vaultPath,
 			applyHiddenPages,
 			enterWaitingLayout,
 			notifyTranslateItemErrors,
+			paperKey,
+			queueStateWrite,
 			t,
 		],
 	);
@@ -512,12 +692,14 @@ export function usePdfLayoutTranslate({
 				return;
 			}
 			const pageActive = pageItems.some((item) => item.translated?.trim());
+			if (hiddenPageIndexesRef.current.has(pageIndex)) {
+				hiddenPageIndexesRef.current.delete(pageIndex);
+				setHiddenRevision((revision) => revision + 1);
+				return;
+			}
 			if (pageActive) {
 				hiddenPageIndexesRef.current.add(pageIndex);
-				setLayoutTranslateJob((prev) => ({
-					...prev,
-					items: prev.items.filter((item) => item.pageIndex !== pageIndex),
-				}));
+				setHiddenRevision((revision) => revision + 1);
 				return;
 			}
 			startPageLayoutTranslate(pageIndex);
@@ -544,6 +726,11 @@ export function usePdfLayoutTranslate({
 		) {
 			// Complete/explicitly-cancelled overlays keep the original clear action.
 			if (layoutTranslateJob.items.some((it) => it.translated)) {
+				if (hiddenDocumentRef.current) {
+					hiddenDocumentRef.current = false;
+					setHiddenRevision((revision) => revision + 1);
+					return;
+				}
 				clearLayoutTranslate();
 				return;
 			}
@@ -563,6 +750,7 @@ export function usePdfLayoutTranslate({
 		layoutTranslateAbortRef.current?.abort();
 		layoutTranslateAbortRef.current = null;
 		hiddenPageIndexesRef.current.clear();
+		hiddenDocumentRef.current = false;
 		layoutTranslateWaitTargetRef.current = null;
 		waitingAutoStartedRef.current = false;
 		setLayoutTranslateJob({ status: "idle", items: [] });
@@ -639,27 +827,67 @@ export function usePdfLayoutTranslate({
 	// it should not depend on starting a second translation job or on the source
 	// pane's local React state.
 	useEffect(() => {
-		if (!translationPane || !paperAbsPath) return;
+		if (!paperAbsPath) {
+			cacheHydrationPathRef.current = null;
+			setLayoutTranslateCacheReady(true);
+			return;
+		}
+		if (cacheHydrationPathRef.current !== paperAbsPath) {
+			cacheHydrationPathRef.current = paperAbsPath;
+			setLayoutTranslateCacheReady(false);
+		}
 		let cancelled = false;
 		void readLayoutTranslateSidecar(
 			paperAbsPath,
 			currentLayoutTranslateCacheKey(),
-		).then((sidecar) => {
-			if (cancelled || !sidecar?.items.length) return;
-			const items = layoutRawRegions?.length
-				? applyLayoutTranslateSidecar(
-						toLayoutTranslateItems(
-							listTranslatableLayoutRegions(layoutRawRegions),
-						),
-						sidecar,
-					)
-				: sidecar.items.map((item) => ({ ...item, status: "done" as const }));
-			setLayoutTranslateJob({ status: "done", items });
-		});
+		)
+			.then(async (sidecar) => {
+				if (cancelled) return;
+				if (!sidecar?.items.length) {
+					setLayoutTranslateCacheReady(true);
+					return;
+				}
+				const items = await invalidateChangedGlossaryItems(
+					layoutRawRegions?.length
+						? applyLayoutTranslateSidecar(
+								toLayoutTranslateItems(
+									listTranslatableLayoutRegions(layoutRawRegions),
+								),
+								sidecar,
+							)
+						: sidecar.items.map((item) => ({
+								...item,
+								status: "done" as const,
+							})),
+					paperAbsPath,
+					translationObjectId,
+					(terms) => {
+						glossaryTermsRef.current = terms;
+					},
+				);
+				if (cancelled) return;
+				setLayoutTranslateCacheReady(true);
+				setLayoutTranslateJob((prev) => {
+					if (
+						prev.status === "running" ||
+						prev.status === "waitingLayout" ||
+						prev.items.some((item) => item.translated?.trim())
+					) {
+						return prev;
+					}
+					return {
+						status: hasPendingLayoutTranslateItems(items) ? "partial" : "done",
+						items,
+					};
+				});
+			})
+			.catch(() => {
+				if (!cancelled) setLayoutTranslateCacheReady(true);
+			});
 		return () => {
 			cancelled = true;
 		};
-	}, [translationPane, paperAbsPath, layoutRawRegions]);
+	}, [paperAbsPath, translationObjectId, layoutRawRegions]);
 
 	// Bucket once per job update (not per page); unchanged buckets keep their
 	// previous array identity so memoized page overlays bail out while another
@@ -667,39 +895,94 @@ export function usePdfLayoutTranslate({
 	const layoutTranslateByPageRef = useRef<
 		ReadonlyMap<number, readonly LayoutTranslateItem[]>
 	>(new Map());
+	// biome-ignore lint/correctness/useExhaustiveDependencies: hiddenRevision invalidates ref-backed visibility.
 	const layoutTranslateItemsByPage = useMemo(() => {
+		const hidden = hiddenPageIndexesRef.current;
+		const visible = hiddenDocumentRef.current
+			? []
+			: hidden.size === 0
+				? layoutTranslateJob.items
+				: layoutTranslateJob.items.filter(
+						(item) => !hidden.has(item.pageIndex),
+					);
 		const grouped = groupLayoutTranslateItemsByPage(
-			layoutTranslateJob.items,
+			visible,
 			layoutTranslateByPageRef.current,
 		);
 		layoutTranslateByPageRef.current = grouped;
 		return grouped;
-	}, [layoutTranslateJob.items]);
+	}, [layoutTranslateJob.items, hiddenRevision]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: hiddenRevision invalidates ref-backed visibility.
 	const layoutTranslatePageStateByPage = useMemo(() => {
-		const states = new Map<number, { active: boolean; running: boolean }>();
+		const hidden = hiddenPageIndexesRef.current;
+		const states = new Map<
+			number,
+			{
+				active: boolean;
+				running: boolean;
+				pending: boolean;
+				done: boolean;
+				error: boolean;
+				doneCount: number;
+				totalCount: number;
+			}
+		>();
+		if (hiddenDocumentRef.current) return states;
 		for (const item of layoutTranslateJob.items) {
+			if (hidden.has(item.pageIndex)) continue;
 			const state = states.get(item.pageIndex) ?? {
 				active: false,
 				running: false,
+				pending: false,
+				done: false,
+				error: false,
+				doneCount: 0,
+				totalCount: 0,
 			};
+			state.totalCount += 1;
 			if (item.status === "running") {
 				state.active = true;
 				state.running = true;
 			}
+			if (item.status === "pending" || item.status === "skipped")
+				state.pending = true;
+			if (item.status === "error") state.error = true;
 			if (item.translated?.trim()) {
 				state.active = true;
+				state.done = true;
+				state.doneCount += 1;
 			}
 			states.set(item.pageIndex, state);
 		}
 		return states;
+	}, [layoutTranslateJob.items, hiddenRevision]);
+
+	const layoutTranslateProgress = useMemo(() => {
+		const progress = {
+			total: layoutTranslateJob.items.length,
+			pending: 0,
+			running: 0,
+			done: 0,
+			error: 0,
+			skipped: 0,
+		};
+		for (const item of layoutTranslateJob.items) {
+			if (item.status === "done" && item.translated?.trim()) progress.done += 1;
+			else if (item.status === "running") progress.running += 1;
+			else if (item.status === "error") progress.error += 1;
+			else if (item.status === "skipped") progress.skipped += 1;
+			else progress.pending += 1;
+		}
+		return progress;
 	}, [layoutTranslateJob.items]);
 
 	const layoutTranslateRunning = layoutTranslateJob.status === "running";
 	const layoutTranslateWaiting = layoutTranslateJob.status === "waitingLayout";
 	const layoutTranslateActive =
-		layoutTranslateRunning ||
-		layoutTranslateJob.items.some((it) => it.translated);
+		!hiddenDocumentRef.current &&
+		(layoutTranslateRunning ||
+			layoutTranslateJob.items.some((it) => it.translated));
 	const layoutTranslateLabel = layoutTranslateWaiting
 		? t("pdf.layoutTranslate.waiting")
 		: layoutTranslateRunning
@@ -713,9 +996,11 @@ export function usePdfLayoutTranslate({
 	return {
 		layoutTranslateItemsByPage,
 		layoutTranslatePageStateByPage,
+		layoutTranslateProgress,
 		layoutTranslateRunning,
 		layoutTranslateWaiting,
 		layoutTranslateActive,
+		layoutTranslateCacheReady,
 		layoutTranslateLabel,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,

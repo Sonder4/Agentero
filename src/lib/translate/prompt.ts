@@ -46,6 +46,19 @@ export function buildTranslatePrompt(opts: {
 	surface?: string;
 	/** Non-empty replaces the default instruction block (role + rules). */
 	customPrompt?: string;
+	context?: {
+		previousParagraph?: string;
+		nextParagraph?: string;
+		previousTranslatedExcerpt?: string;
+		relatedFormulas?: readonly string[];
+		relatedTables?: readonly string[];
+		relatedFigures?: readonly string[];
+		glossary?: readonly {
+			source: string;
+			aliases?: readonly string[];
+			target: string;
+		}[];
+	};
 }): string {
 	const text = opts.text.trim();
 	const lang = opts.targetLangName;
@@ -60,6 +73,57 @@ export function buildTranslatePrompt(opts: {
 			"The text contains several paragraphs, each prefixed with a [[n]] marker. " +
 				"Translate every paragraph and keep the same [[n]] markers, in the same " +
 				"order, with the same number of paragraphs. Do not merge paragraphs.",
+		);
+	}
+	const context = opts.context;
+	if (context?.glossary?.length) {
+		const rows = context.glossary
+			.map(
+				(term) =>
+					`${term.source} | ${(term.aliases ?? []).join(", ")} | ${term.target}`,
+			)
+			.join("\n");
+		parts.push(
+			"Object-scoped glossary (use these translations consistently; do not translate the table itself):\n" +
+				"Source | Aliases | Target\n" +
+				rows,
+		);
+	}
+	const contextParts: string[] = [];
+	if (context?.previousParagraph?.trim()) {
+		contextParts.push(
+			`Previous paragraph (read-only):\n${context.previousParagraph.trim()}`,
+		);
+	}
+	if (context?.nextParagraph?.trim()) {
+		contextParts.push(
+			`Next paragraph (read-only):\n${context.nextParagraph.trim()}`,
+		);
+	}
+	if (context?.previousTranslatedExcerpt?.trim()) {
+		contextParts.push(
+			`Previous translated excerpt (read-only):\n${context.previousTranslatedExcerpt.trim()}`,
+		);
+	}
+	if (context?.relatedFormulas?.length) {
+		contextParts.push(
+			`Related formulas (preserve exactly):\n${context.relatedFormulas.join("\n")}`,
+		);
+	}
+	if (context?.relatedTables?.length) {
+		contextParts.push(
+			`Related tables (read-only):\n${context.relatedTables.join("\n")}`,
+		);
+	}
+	if (context?.relatedFigures?.length) {
+		contextParts.push(
+			`Related figures/captions (read-only):\n${context.relatedFigures.join("\n")}`,
+		);
+	}
+	if (contextParts.length) {
+		parts.push(
+			"The following context belongs to the same translation object. Use it only for terminology and reference resolution; do not translate or copy it into the answer.\n\n" +
+				contextParts.join("\n\n"),
 		);
 	}
 	parts.push("Text:", text);

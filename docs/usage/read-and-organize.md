@@ -52,7 +52,7 @@ PDF 阅读器支持：
 - 点击条目跳转到 PDF 对应位置；可开启叠加层查看模型原始框。
 - 鼠标悬停在插图/表/算法/有编号公式区域会在框右上角显示「单击进行批注」提示；单击打开视觉批注编辑器。
 
-原始结果缓存到 `{paper}/source/layout.json`，侧栏索引写入 `{paper}/source/layout-index.json`，可用 CLI `agentero layout list|get` 读取。
+原始结果缓存到 `{paper}/source/layout.json`，侧栏索引写入 `{paper}/.src/layout-index.json`，可用 CLI `agentero layout list|get` 读取。
 
 ## 参考文献（References）
 
@@ -82,7 +82,7 @@ PDF 阅读器支持：
 3. 按设置使用 **Agentero 内置**服务、免费机器翻译或 BYOA Agent。
 4. 查看并保留需要的翻译记录。
 
-PDF 工具栏还有 **全文翻译**（Languages，在视觉批注旁）：依赖版面分析，按阅读顺序分批翻译正文，译文盖在原 bbox 上。页签可只译本页；再点可停止或清除覆盖层。缓存写在 `{paper}/source/layout-translate.json`，不改 PDF。
+PDF 工具栏还有 **全文翻译**（Languages，在视觉批注旁）：依赖版面分析，按阅读顺序分批翻译正文，译文盖在原 bbox 上。页签可只译本页；再点可停止或清除覆盖层。缓存写在 `{paper}/.src/layout-translate.json`，不改 PDF。
 
 在 **Settings → 翻译** 中配置服务与默认语言。官方安装包默认是「Agentero 内置」，不需要填任何 Key；免费服务可能受限流影响，需要稳定结果时优先用内置服务或已登录的 Agent。
 

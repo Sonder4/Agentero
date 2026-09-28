@@ -47,6 +47,8 @@ export type UsePdfLayoutClusterOptions = {
 	paperRelPath: string | null;
 	/** Stable paper identifier for per-document Agent session reuse. */
 	paperKey: string | null;
+	/** Catalog metadata id; stable when the paper folder is moved. */
+	paperObjectId?: string | null;
 	/** Vault root passed to the Agent as its cwd. */
 	vaultPath: string | null;
 	/** Layout capability value gates the auto-run effect; the ref is never a dep. */
@@ -89,6 +91,7 @@ export function usePdfLayoutCluster({
 	paperAbsPath,
 	paperRelPath,
 	paperKey,
+	paperObjectId,
 	vaultPath,
 	layoutCap,
 	layoutCapRef,
@@ -180,9 +183,11 @@ export function usePdfLayoutCluster({
 	const {
 		layoutTranslateItemsByPage,
 		layoutTranslatePageStateByPage,
+		layoutTranslateProgress,
 		layoutTranslateRunning,
 		layoutTranslateWaiting,
 		layoutTranslateActive,
+		layoutTranslateCacheReady,
 		layoutTranslateLabel,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,
@@ -193,6 +198,7 @@ export function usePdfLayoutCluster({
 		paperAbsPath,
 		paperRelPath,
 		paperKey,
+		paperObjectId,
 		vaultPath,
 	});
 
@@ -209,9 +215,11 @@ export function usePdfLayoutCluster({
 		screenPointForRegion,
 		layoutTranslateItemsByPage,
 		layoutTranslatePageStateByPage,
+		layoutTranslateProgress,
 		layoutTranslateRunning,
 		layoutTranslateWaiting,
 		layoutTranslateActive,
+		layoutTranslateCacheReady,
 		layoutTranslateLabel,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,

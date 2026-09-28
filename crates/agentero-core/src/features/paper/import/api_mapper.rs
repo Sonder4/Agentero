@@ -508,7 +508,7 @@ mod tests {
             meta.source_url.as_deref(),
             Some("https://arxiv.org/abs/1706.03762")
         );
-        // metadata.json must use snake_case keys for the frontend
+        // The metadata sidecar uses snake_case keys for the frontend.
         let json = serde_json::to_string(&meta).unwrap();
         assert!(json.contains("\"pdf_url\""), "got {json}");
         assert!(json.contains("\"arxiv_id\""), "got {json}");

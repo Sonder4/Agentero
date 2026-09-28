@@ -15,6 +15,14 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
+const LEGACY_GENERATED_FILES: &[(&str, &str)] = &[
+    ("source/layout-index.json", "layout-index.json"),
+    ("source/agentero-cite.json", "citations.json"),
+    ("source/layout-translate.json", "layout-translate.json"),
+    ("source/layout-translate-glossary.json", "glossary.json"),
+    ("source/layout-translate-state.json", "state.json"),
+];
+
 #[derive(Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConnectArgs {
@@ -531,25 +539,49 @@ async fn remote_rescan_impl(
             Ok(e) => e,
             Err(_) => continue,
         };
+        let legacy_metadata = entries
+            .iter()
+            .any(|e| e.is_file && e.name == "metadata.json");
+        let canonical_metadata = entries.iter().any(|e| {
+            e.is_dir && e.name == ".src"
+            // The marker is checked below through VaultFs because a
+            // directory listing does not expose its children here.
+        });
+        let canonical_metadata = canonical_metadata
+            && session
+                .fs
+                .exists(&format!("{dir}/.src/metadata.json"))
+                .await
+                .unwrap_or(false);
+        if legacy_metadata {
+            migrate_remote_metadata(session, &dir, canonical_metadata).await;
+        }
+        migrate_remote_generated_files(session, &dir).await;
         let mut has_marker = false;
         for e in &entries {
-            if e.is_file
-                && matches!(
-                    e.name.as_str(),
-                    "NOTES.md" | "highlights.md" | "PAPER.md" | "metadata.json"
-                )
-            {
+            if e.is_file && matches!(e.name.as_str(), "NOTES.md" | "highlights.md" | "PAPER.md") {
                 has_marker = true;
             }
-            if e.is_dir && matches!(e.name.as_str(), "source" | "assets" | "marks") {
+            if e.is_dir && matches!(e.name.as_str(), "source" | "assets" | "marks" | ".src") {
                 has_marker = true;
             }
         }
+        has_marker |= canonical_metadata || legacy_metadata;
         if has_marker && dir != "papers" {
             let path = dir.clone();
             let id = path.rsplit('/').next().unwrap_or("paper").to_string();
             let existing = papers::get_by_path(&session.work_root, &path)?;
-            let mut rec = existing.unwrap_or_else(|| {
+            let remote_meta = if existing.is_none() {
+                session
+                    .fs
+                    .read(&format!("{path}/.src/metadata.json"))
+                    .await
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<PaperRecord>(&bytes).ok())
+            } else {
+                None
+            };
+            let mut rec = existing.or(remote_meta).unwrap_or_else(|| {
                 let mut rec = PaperRecord::local_pdf(id.clone(), id.clone()).at_path(&path);
                 rec.meta_source = Some("remote_rescan".into());
                 rec
@@ -564,6 +596,19 @@ async fn remote_rescan_impl(
             rec.path = path;
             rec.updated_at = now.clone();
             papers::upsert_paper(&session.work_root, &rec)?;
+            let local_metadata = session.work_root.join(&rec.path).join(".src/metadata.json");
+            if let Ok(bytes) = std::fs::read(&local_metadata) {
+                let _ = session
+                    .fs
+                    .write(
+                        &format!("{}/.src/metadata.json", rec.path),
+                        &bytes,
+                        WriteOpts {
+                            create_parents: true,
+                        },
+                    )
+                    .await;
+            }
             count += 1;
             continue;
         }
@@ -580,4 +625,118 @@ async fn remote_rescan_impl(
     }
 
     Ok(RemotePaperRescanResult { count })
+}
+
+/// One-way migration for remote vaults. The local catalog mirror cannot use
+/// the core filesystem migrator because paper files remain on the remote
+/// host, so copy the bytes through `VaultFs` and remove the legacy file only
+/// after the canonical write succeeds. Conflicts are retained verbatim.
+async fn migrate_remote_metadata(
+    session: &crate::integration::remote::RemoteSession,
+    dir: &str,
+    canonical_exists: bool,
+) {
+    let legacy = format!("{dir}/metadata.json");
+    let canonical = format!("{dir}/.src/metadata.json");
+    if canonical_exists {
+        let old = session.fs.read(&legacy).await;
+        let new = session.fs.read(&canonical).await;
+        match (old, new) {
+            (Ok(old), Ok(new)) if old == new => {
+                if let Err(e) = session.fs.remove(&legacy, false).await {
+                    log::warn!(
+                        target: "agentero::remote",
+                        "failed to remove duplicate remote metadata {legacy}: {e}"
+                    );
+                }
+            }
+            (Ok(_), Ok(_)) => log::warn!(
+                target: "agentero::remote",
+                "remote metadata migration conflict; preserving both {legacy} and {canonical}"
+            ),
+            (Err(e), _) | (_, Err(e)) => log::warn!(
+                target: "agentero::remote",
+                "failed to inspect remote metadata {legacy}: {e}"
+            ),
+        }
+        return;
+    }
+    match session.fs.read(&legacy).await {
+        Ok(bytes) => {
+            if let Err(e) = session
+                .fs
+                .write(
+                    &canonical,
+                    &bytes,
+                    WriteOpts {
+                        create_parents: true,
+                    },
+                )
+                .await
+            {
+                log::warn!(
+                    target: "agentero::remote",
+                    "failed to migrate remote metadata {legacy} -> {canonical}: {e}"
+                );
+                return;
+            }
+            if let Err(e) = session.fs.remove(&legacy, false).await {
+                log::warn!(
+                    target: "agentero::remote",
+                    "canonical remote metadata written but legacy file retained {legacy}: {e}"
+                );
+            }
+        }
+        Err(e) => log::warn!(
+            target: "agentero::remote",
+            "failed to read legacy remote metadata {legacy}: {e}"
+        ),
+    }
+}
+
+/// Move rebuildable artifacts out of the legacy `source/` directory on a
+/// remote vault. Conflicts are retained, matching the local migration policy.
+async fn migrate_remote_generated_files(
+    session: &crate::integration::remote::RemoteSession,
+    dir: &str,
+) {
+    for (legacy_name, target_name) in LEGACY_GENERATED_FILES {
+        let legacy = format!("{dir}/{legacy_name}");
+        if !session.fs.exists(&legacy).await.unwrap_or(false) {
+            continue;
+        }
+        let canonical = format!("{dir}/.src/{target_name}");
+        if session.fs.exists(&canonical).await.unwrap_or(false) {
+            let old = session.fs.read(&legacy).await;
+            let new = session.fs.read(&canonical).await;
+            match (old, new) {
+                (Ok(old), Ok(new)) if old == new => {
+                    let _ = session.fs.remove(&legacy, false).await;
+                }
+                (Ok(_), Ok(_)) => log::warn!(
+                    target: "agentero::remote",
+                    "remote generated-file migration conflict; preserving both {legacy} and {canonical}"
+                ),
+                _ => {}
+            }
+            continue;
+        }
+        let Ok(bytes) = session.fs.read(&legacy).await else {
+            continue;
+        };
+        if session
+            .fs
+            .write(
+                &canonical,
+                &bytes,
+                WriteOpts {
+                    create_parents: true,
+                },
+            )
+            .await
+            .is_ok()
+        {
+            let _ = session.fs.remove(&legacy, false).await;
+        }
+    }
 }

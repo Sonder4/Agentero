@@ -238,14 +238,14 @@ describe("Wiki rename target classification", () => {
 		]) {
 			expect(isWikiTargetPath(path), path).toBe(true);
 		}
-		expect(isWikiTargetPath("/vault/source/agentero-cite.json")).toBe(false);
+		expect(isWikiTargetPath("/vault/.src/citations.json")).toBe(false);
 	});
 
 	it("handles Wiki targets, mixed events, and directory-like paths", () => {
 		expect(renameMayAffectWikiTargets(["/vault/notes/Source.md"])).toBe(true);
 		expect(
 			renameMayAffectWikiTargets([
-				"/vault/source/agentero-cite.json",
+				"/vault/.src/citations.json",
 				"/vault/assets/paper.pdf",
 			]),
 		).toBe(true);
@@ -257,8 +257,8 @@ describe("Wiki rename target classification", () => {
 	it("skips Wiki handling for explicit non-target file extensions", () => {
 		expect(
 			renameMayAffectWikiTargets([
-				"/vault/source/agentero-cite.json.tmp",
-				"/vault/source/agentero-cite.json",
+				"/vault/.src/citations.json.tmp",
+				"/vault/.src/citations.json",
 				"C:\\vault\\source\\references.bib",
 			]),
 		).toBe(false);

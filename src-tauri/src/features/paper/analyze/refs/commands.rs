@@ -73,7 +73,10 @@ pub async fn paper_refs_list(args: PaperRefsListArgs) -> ApiResult<Option<super:
                 return map_err(err);
             }
         };
-        let sidecar_path = vault.join(rel).join("source").join(super::SIDECAR_FILE);
+        let sidecar_path = vault
+            .join(rel)
+            .join(super::GENERATED_DIR)
+            .join(super::SIDECAR_FILE);
         op.finish_result(Ok(super::read_sidecar(&sidecar_path)))
     })
     .await

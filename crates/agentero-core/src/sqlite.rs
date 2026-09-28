@@ -47,6 +47,11 @@ impl DbMsgs {
         scope: "feeds ",
         read: "feeds ",
     };
+    pub const WEB_AI: Self = Self {
+        name: "web_ai",
+        scope: "web_ai ",
+        read: "web_ai ",
+    };
 }
 
 /// Open `db_path` and apply [`STANDARD_PRAGMAS`].

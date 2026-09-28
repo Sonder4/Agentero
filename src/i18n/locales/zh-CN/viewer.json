@@ -47,7 +47,9 @@
 			"cancelQueue": "取消排队",
 			"queuedToast": "全文翻译已排队，等待版面解析完成",
 			"startedAfterLayout": "版面解析完成，已开始全文翻译",
-			"parseFailedWhileWaiting": "版面解析失败，翻译已取消"
+			"parseFailedWhileWaiting": "版面解析失败，翻译已取消",
+			"progress": "已翻译 {{done}}/{{total}}",
+			"failedCount": "失败 {{count}} 项"
 		},
 		"translation": {
 			"title": "翻译",

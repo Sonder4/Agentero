@@ -798,7 +798,8 @@ mod tests {
         fs::create_dir_all(a.join("papers/x")).unwrap();
         fs::create_dir_all(&b).unwrap();
         fs::write(a.join("papers/x/NOTES.md"), "# x\n").unwrap();
-        fs::write(a.join("papers/x/metadata.json"), r#"{"id":"x"}"#).unwrap();
+        fs::create_dir_all(a.join("papers/x/.src")).unwrap();
+        fs::write(a.join("papers/x/.src/metadata.json"), r#"{"id":"x"}"#).unwrap();
 
         // A publishes, empty B joins and receives everything.
         let up = sync_vault(&a, &cfg, noop).await.expect("sync A");
@@ -887,7 +888,8 @@ mod tests {
         fs::create_dir_all(a.join("papers/x")).unwrap();
         fs::create_dir_all(&b).unwrap();
         fs::write(a.join("papers/x/NOTES.md"), "# x\n").unwrap();
-        fs::write(a.join("papers/x/metadata.json"), r#"{"id":"x"}"#).unwrap();
+        fs::create_dir_all(a.join("papers/x/.src")).unwrap();
+        fs::write(a.join("papers/x/.src/metadata.json"), r#"{"id":"x"}"#).unwrap();
 
         // A publishes, empty B joins and receives everything.
         let up = sync_vault(&a, &cfg, noop).await.expect("sync A");

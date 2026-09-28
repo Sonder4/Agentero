@@ -315,7 +315,7 @@ describe("collectTreeRefreshTargets", () => {
 describe("paperAssetDownloadReasons", () => {
 	it("trusts hasTex on a lazy source/ shell (no listed .tex children)", () => {
 		const paper = dir("/v/papers/x", [
-			file("/v/papers/x/metadata.json"),
+			file("/v/papers/x/.src/metadata.json"),
 			file("/v/papers/x/a.pdf"),
 			dir("/v/papers/x/source", [], { childrenPending: true, hasTex: true }),
 		]);
@@ -324,7 +324,7 @@ describe("paperAssetDownloadReasons", () => {
 
 	it("flags noBody when the source/ shell has no TeX and PAPER.md is absent", () => {
 		const paper = dir("/v/papers/x", [
-			file("/v/papers/x/metadata.json"),
+			file("/v/papers/x/.src/metadata.json"),
 			file("/v/papers/x/a.pdf"),
 			dir("/v/papers/x/source", [], { childrenPending: true, hasTex: false }),
 		]);
@@ -333,7 +333,7 @@ describe("paperAssetDownloadReasons", () => {
 
 	it("still detects listed .tex files without the flag", () => {
 		const paper = dir("/v/papers/x", [
-			file("/v/papers/x/metadata.json"),
+			file("/v/papers/x/.src/metadata.json"),
 			file("/v/papers/x/a.pdf"),
 			dir("/v/papers/x/source", [file("/v/papers/x/source/main.tex")]),
 		]);

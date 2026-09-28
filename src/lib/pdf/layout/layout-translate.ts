@@ -13,6 +13,12 @@ import {
 	isLayoutTranslatableKind,
 } from "@/lib/pdf/layout/labels";
 import {
+	LAYOUT_TRANSLATE_DATA_DIR,
+	type LayoutTranslateGlossaryTerm,
+	readLayoutTranslateGlossary,
+	writeLayoutTranslateGlossary,
+} from "@/lib/pdf/layout/layout-translate-object";
+import {
 	buildLayoutTranslateChains,
 	type LayoutTranslateChain,
 	normalizeLayoutSourceText,
@@ -32,6 +38,10 @@ import {
 } from "@/lib/pdf/translate/agent-session-cache";
 import { loadSettings } from "@/lib/settings";
 import { runTranslate } from "@/lib/translate";
+import {
+	clampLayoutTranslateConcurrency,
+	DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+} from "@/lib/translate/defaults";
 import { langsFromSettings } from "@/lib/translate/lang";
 import {
 	type MaskedToken,
@@ -76,6 +86,40 @@ const translateSidecarWriteTimers = new Map<
 	string,
 	ReturnType<typeof setTimeout>
 >();
+const translateSidecarWriteQueues = new Map<string, Promise<void>>();
+
+function enqueueTranslateSidecarWrite(
+	paperAbsPath: string,
+	write: () => Promise<void>,
+): Promise<void> {
+	const previous = translateSidecarWriteQueues.get(paperAbsPath);
+	if (!previous) {
+		let next: Promise<void>;
+		try {
+			next = write();
+		} catch (error) {
+			next = Promise.reject(error);
+		}
+		next = next.finally(() => {
+			if (translateSidecarWriteQueues.get(paperAbsPath) === next) {
+				translateSidecarWriteQueues.delete(paperAbsPath);
+			}
+		});
+		translateSidecarWriteQueues.set(paperAbsPath, next);
+		return next;
+	}
+	let next: Promise<void>;
+	next = previous
+		.catch(() => undefined)
+		.then(write)
+		.finally(() => {
+			if (translateSidecarWriteQueues.get(paperAbsPath) === next) {
+				translateSidecarWriteQueues.delete(paperAbsPath);
+			}
+		});
+	translateSidecarWriteQueues.set(paperAbsPath, next);
+	return next;
+}
 
 export type {
 	LayoutTranslateItem,
@@ -328,8 +372,13 @@ function sameLayoutTranslateCacheKey(
 }
 
 export function layoutTranslateSidecarPath(paperAbsPath: string): string {
+	// A loose PDF is treated as the paper unit named by its stem.  Imported
+	// papers normally pass their unit directory directly (the directory that
+	// contains metadata.json); this fallback keeps the path deterministic for
+	// PDFs opened before they are imported into a unit directory.
+	const paperUnit = paperAbsPath.replace(/\.pdf$/i, "");
 	return joinVaultPath(
-		joinVaultPath(paperAbsPath, "source"),
+		joinVaultPath(paperUnit, LAYOUT_TRANSLATE_DATA_DIR),
 		LAYOUT_TRANSLATE_SIDECAR_FILE,
 	);
 }
@@ -447,53 +496,58 @@ export async function writeLayoutTranslateSidecar(
 	options: LayoutTranslateWriteOptions = {},
 ): Promise<void> {
 	if (!paperAbsPath) return;
-	const done = items
-		.filter((item) => item.status === "done" && item.translated?.trim())
-		.map(
-			(item): LayoutTranslateSidecarItem => ({
-				id: item.id,
-				pageIndex: item.pageIndex,
-				bbox: item.bbox,
-				kind: item.kind,
-				readingOrder: item.readingOrder,
-				source: item.source,
-				translated: item.translated?.trim() ?? "",
-			}),
-		);
-	const merged = new Map<string, LayoutTranslateSidecarItem>();
-	if (options.preserveExisting) {
-		const existing = await readLayoutTranslateSidecar(paperAbsPath, key);
-		const replacePageIndexes = new Set(options.replacePageIndexes ?? []);
-		for (const item of existing?.items ?? []) {
-			if (replacePageIndexes.has(item.pageIndex)) continue;
-			merged.set(item.id, item);
+	const pending = translateSidecarWriteTimers.get(paperAbsPath);
+	if (pending) {
+		clearTimeout(pending);
+		translateSidecarWriteTimers.delete(paperAbsPath);
+	}
+	await enqueueTranslateSidecarWrite(paperAbsPath, async () => {
+		const done = items
+			.filter((item) => item.status === "done" && item.translated?.trim())
+			.map(
+				(item): LayoutTranslateSidecarItem => ({
+					id: item.id,
+					pageIndex: item.pageIndex,
+					bbox: item.bbox,
+					kind: item.kind,
+					readingOrder: item.readingOrder,
+					source: item.source,
+					translated: item.translated?.trim() ?? "",
+				}),
+			);
+		const merged = new Map<string, LayoutTranslateSidecarItem>();
+		if (options.preserveExisting) {
+			const existing = await readLayoutTranslateSidecar(paperAbsPath, key);
+			const replacePageIndexes = new Set(options.replacePageIndexes ?? []);
+			for (const item of existing?.items ?? []) {
+				if (replacePageIndexes.has(item.pageIndex)) continue;
+				merged.set(item.id, item);
+			}
 		}
-	}
-	for (const item of done) {
-		merged.set(item.id, item);
-	}
-	const sidecar: LayoutTranslateSidecar = {
-		schemaVersion: LAYOUT_TRANSLATE_SIDECAR_SCHEMA_VERSION,
-		source: {
-			mode: "pdf-layout-translate",
-			generatedAt: new Date().toISOString(),
-			providerId: key.providerId,
-			sourceLang: key.sourceLang,
-			targetLang: key.targetLang,
-			serviceKey: key.serviceKey,
-		},
-		items: [...merged.values()].sort(
-			(a, b) =>
-				a.pageIndex - b.pageIndex ||
-				a.readingOrder - b.readingOrder ||
-				a.bbox.y - b.bbox.y ||
-				a.bbox.x - b.bbox.x,
-		),
-	};
-	await writeVaultFile(
-		layoutTranslateSidecarPath(paperAbsPath),
-		`${JSON.stringify(sidecar, null, 2)}\n`,
-	);
+		for (const item of done) merged.set(item.id, item);
+		const sidecar: LayoutTranslateSidecar = {
+			schemaVersion: LAYOUT_TRANSLATE_SIDECAR_SCHEMA_VERSION,
+			source: {
+				mode: "pdf-layout-translate",
+				generatedAt: new Date().toISOString(),
+				providerId: key.providerId,
+				sourceLang: key.sourceLang,
+				targetLang: key.targetLang,
+				serviceKey: key.serviceKey,
+			},
+			items: [...merged.values()].sort(
+				(a, b) =>
+					a.pageIndex - b.pageIndex ||
+					a.readingOrder - b.readingOrder ||
+					a.bbox.y - b.bbox.y ||
+					a.bbox.x - b.bbox.x,
+			),
+		};
+		await writeVaultFile(
+			layoutTranslateSidecarPath(paperAbsPath),
+			`${JSON.stringify(sidecar, null, 2)}\n`,
+		);
+	});
 }
 
 export function hasPendingLayoutTranslateItems(
@@ -580,6 +634,7 @@ export function groupLayoutTranslateItemsByPage(
 async function resolveLayoutTranslateAgentOpts(options: {
 	paperKey: string | null | undefined;
 	vaultPath: string | null | undefined;
+	reuseSession: boolean;
 }): Promise<TranslateRunOptions | undefined> {
 	const settings = loadSettings();
 	if (settings.translate.provider !== "agent") return undefined;
@@ -589,22 +644,20 @@ async function resolveLayoutTranslateAgentOpts(options: {
 	}
 	const agentId = resolved.agentId;
 	const modelId = resolved.modelId;
-	const { paperKey, vaultPath } = options;
+	const { paperKey, vaultPath, reuseSession } = options;
 	return {
 		agent: {
 			runOnce: async (prompt: string) => {
-				const cachedSessionId = getAgentTranslateSessionId(
-					paperKey,
-					agentId,
-					modelId,
-				);
+				const cachedSessionId = reuseSession
+					? getAgentTranslateSessionId(paperKey, agentId, modelId)
+					: undefined;
 				const accepted = await runOnce({
 					prompt,
 					agentId,
 					modelId,
 					sessionId: cachedSessionId ?? undefined,
 					vaultPath: vaultPath ?? undefined,
-					workflow: "translate",
+					workflow: "pdf-layout-translate",
 					permissionMode: "auto",
 					hideFromChatHistory: true,
 				});
@@ -617,7 +670,11 @@ async function resolveLayoutTranslateAgentOpts(options: {
 					void listenAgentCompleted((ev) => {
 						if (ev.sessionId !== sessionId) return;
 						cleanup();
-						if (ev.providerSessionId && ev.stopReason !== "cancelled") {
+						if (
+							reuseSession &&
+							ev.providerSessionId &&
+							ev.stopReason !== "cancelled"
+						) {
 							setAgentTranslateSessionId(
 								paperKey,
 								agentId,
@@ -630,7 +687,8 @@ async function resolveLayoutTranslateAgentOpts(options: {
 					void listenAgentFailed((ev) => {
 						if (ev.sessionId !== sessionId) return;
 						cleanup();
-						evictAgentTranslateSessionId(paperKey, agentId, modelId);
+						if (reuseSession)
+							evictAgentTranslateSessionId(paperKey, agentId, modelId);
 						reject(new Error(ev.error || "Agent translation failed"));
 					}).then((u) => unsubs.push(u));
 				});
@@ -749,20 +807,96 @@ export async function runLayoutRegionTranslate(options: {
 	concurrency?: number;
 	onUpdate: (items: LayoutTranslateItem[]) => void;
 	paperKey?: string | null;
+	paperObjectId?: string | null;
 	vaultPath?: string | null;
+	paperAbsPath?: string | null;
+	contextRegions?: readonly PdfLayoutRegion[] | null;
 }): Promise<LayoutTranslateItem[]> {
+	const settings = loadSettings();
+	const langs = langsFromSettings(settings.translate, i18n.language ?? "en");
+	let glossary = await readLayoutTranslateGlossary(
+		options.paperAbsPath,
+		options.paperObjectId ??
+			options.paperKey ??
+			options.paperAbsPath ??
+			"paper",
+		langs.sourceLang,
+		langs.targetLang,
+	);
+	const configuredConcurrency = clampLayoutTranslateConcurrency(
+		Number(
+			(
+				settings.translate as TranslateSettings & {
+					layoutTranslateConcurrency?: number;
+				}
+			).layoutTranslateConcurrency ??
+				options.concurrency ??
+				DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+		),
+	);
 	const agentOpts = await resolveLayoutTranslateAgentOpts({
 		paperKey: options.paperKey,
 		vaultPath: options.vaultPath,
+		reuseSession: configuredConcurrency === 1,
 	});
 	// Agent is heavy — serialize; free/commercial MT keeps a small pool.
-	const concurrency = Math.max(
-		1,
-		agentOpts ? 1 : (options.concurrency ?? LAYOUT_TRANSLATE_CONCURRENCY),
-	);
+	const concurrency = configuredConcurrency;
 	const items = options.items.map((it) => ({ ...it }));
 	const signal = options.signal;
-	const pending = buildLayoutTranslateChains(items).filter(chainNeedsTranslate);
+	const allChains = buildLayoutTranslateChains(items);
+	const pending = allChains.filter(chainNeedsTranslate);
+	if (
+		agentOpts?.agent &&
+		glossary.terms.length === 0 &&
+		options.paperAbsPath &&
+		pending.length > 0
+	) {
+		const sample = allChains
+			.filter(
+				(_, index) =>
+					index < 2 || index >= allChains.length - 2 || index % 10 === 0,
+			)
+			.slice(0, 8)
+			.map((chain) => chain.source)
+			.join("\n\n---\n\n");
+		try {
+			const raw = await agentOpts.agent.runOnce(
+				`Extract a concise glossary for this research paper. Return JSON only in the form {"terms":[{"source":"...","aliases":[],"target":"...","category":"technical"}]}. Include only recurring technical terms, proper nouns, abbreviations, and established translations. Do not include formulas, URLs, numbers, or generic words. The target language is ${langs.targetLang}.\n\nPaper excerpts:\n${sample}`,
+			);
+			const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
+			const parsed = jsonText
+				? (JSON.parse(jsonText) as { terms?: unknown })
+				: null;
+			const terms = Array.isArray(parsed?.terms)
+				? parsed.terms.filter((term): term is LayoutTranslateGlossaryTerm =>
+						Boolean(
+							term &&
+								typeof term === "object" &&
+								typeof (term as LayoutTranslateGlossaryTerm).source ===
+									"string" &&
+								typeof (term as LayoutTranslateGlossaryTerm).target ===
+									"string",
+						),
+					)
+				: [];
+			if (terms.length > 0) {
+				await writeLayoutTranslateGlossary(options.paperAbsPath, {
+					schemaVersion: 1,
+					objectType: "paper",
+					objectId:
+						options.paperObjectId ?? options.paperKey ?? options.paperAbsPath,
+					sourceLang: langs.sourceLang,
+					targetLang: langs.targetLang,
+					terms,
+				});
+				glossary = { ...glossary, terms };
+			}
+		} catch (error) {
+			logger.warn("layout translate glossary generation failed", {
+				error: errorText(error),
+			});
+		}
+	}
 	const batches = buildTranslateBatches(pending);
 	let nextBatch = 0;
 
@@ -771,13 +905,66 @@ export async function runLayoutRegionTranslate(options: {
 	const translateText = async (
 		text: string,
 		pageIndex: number | undefined,
+		chainIndex?: number,
 	): Promise<string> => {
+		const current = chainIndex == null ? undefined : allChains[chainIndex];
+		const previous = chainIndex == null ? undefined : allChains[chainIndex - 1];
+		const next = chainIndex == null ? undefined : allChains[chainIndex + 1];
+		const anchorPage = current?.members[0]?.pageIndex ?? pageIndex;
+		const relatedRegions = (options.contextRegions ?? []).filter(
+			(region) =>
+				anchorPage == null ||
+				(Math.abs(region.pageIndex - anchorPage) <= 1 &&
+					Math.abs(
+						region.readingOrder -
+							(current?.members[0]?.readingOrder ?? region.readingOrder),
+					) <= 12),
+		);
+		const relatedFormulas = relatedRegions
+			.filter((region) => region.kind === "formula")
+			.map((region) => region.text ?? region.title ?? "")
+			.filter(Boolean)
+			.slice(0, 6);
+		const relatedTables = relatedRegions
+			.filter((region) => region.kind === "table")
+			.map((region) => region.text ?? region.title ?? "")
+			.filter(Boolean)
+			.slice(0, 3);
+		const relatedFigures = relatedRegions
+			.filter(
+				(region) =>
+					region.kind === "figure_title" ||
+					region.kind === "image" ||
+					region.kind === "chart",
+			)
+			.map((region) => region.text ?? region.title ?? "")
+			.filter(Boolean)
+			.slice(0, 3);
+		const glossaryTerms: readonly LayoutTranslateGlossaryTerm[] = glossary.terms
+			.filter((term) => {
+				const source = current?.source ?? text;
+				return [term.source, ...(term.aliases ?? [])].some((needle) =>
+					source.toLocaleLowerCase().includes(needle.toLocaleLowerCase()),
+				);
+			})
+			.slice(0, 24);
 		const translated = await runTranslate(
 			{
 				text,
 				context: {
 					page: pageIndex != null ? pageIndex + 1 : undefined,
 					surface: "pdf-layout-bulk",
+					previousParagraph: previous?.source,
+					nextParagraph: next?.source,
+					previousTranslatedExcerpt: previous?.members
+						.map((member) => member.translated?.trim())
+						.filter(Boolean)
+						.join(" ")
+						.slice(-500),
+					relatedFormulas,
+					relatedTables,
+					relatedFigures,
+					glossary: glossaryTerms,
 				},
 			},
 			agentOpts,
@@ -794,7 +981,21 @@ export async function runLayoutRegionTranslate(options: {
 		if (tokens.length === 0) return segment.trim();
 		const restored = restoreInlineTokens(segment.trim(), tokens);
 		if (restored.missing === 0) return restored.text;
-		return await translateText(chain.source, chain.members[0]?.pageIndex);
+		const retry = await translateText(
+			chain.source,
+			chain.members[0]?.pageIndex,
+			allChains.indexOf(chain),
+		);
+		if (tokens.every((token) => retry.includes(token.original))) {
+			return retry.trim();
+		}
+		const retryRestored = restoreInlineTokens(retry.trim(), tokens);
+		if (retryRestored.missing !== 0) {
+			throw new Error(
+				`Protected token mismatch (${retryRestored.missing} token(s) missing)`,
+			);
+		}
+		return retryRestored.text;
 	};
 
 	const applyChain = (chain: LayoutTranslateChain, translated: string) => {
@@ -832,7 +1033,11 @@ export async function runLayoutRegionTranslate(options: {
 
 	const translateChain = async (chain: LayoutTranslateChain) => {
 		const masked = maskInlineTokens(chain.source);
-		const raw = await translateText(masked.text, chain.members[0]?.pageIndex);
+		const raw = await translateText(
+			masked.text,
+			chain.members[0]?.pageIndex,
+			allChains.indexOf(chain),
+		);
 		const text = await finalizeSegment(chain, raw, masked.tokens);
 		if (signal?.aborted) {
 			markChain(chain, "skipped");
@@ -875,6 +1080,7 @@ export async function runLayoutRegionTranslate(options: {
 					const result = await translateText(
 						buildNumberedPayload(maskedUnits),
 						first?.members[0]?.pageIndex,
+						first ? allChains.indexOf(first) : undefined,
 					);
 					const segments = parseNumberedTranslation(result, batch.length);
 					if (signal?.aborted) {

@@ -310,6 +310,51 @@ pub struct CompileLogEvent {
     pub line: String,
 }
 
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:state")]
+pub struct WebAiStateEvent(pub crate::features::web_ai::models::WebAiStatus);
+
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:navigation")]
+pub struct WebAiNavigationEvent(pub crate::features::web_ai::bridge::PageEvent);
+
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:selection")]
+pub struct WebAiSelectionEvent(pub WebAiSelectionPayload);
+
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WebAiSelectionPayload {
+    pub provider_id: String,
+    pub selection_id: String,
+    pub page: Option<u32>,
+    pub byte_length: usize,
+}
+
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:transfer")]
+pub struct WebAiTransferEvent(pub crate::features::web_ai::models::WebAiTransferResult);
+
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:copy")]
+pub struct WebAiCopyEvent {
+    pub provider_id: String,
+    pub paper_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "web-ai:connector")]
+pub struct WebAiConnectorEvent {
+    pub provider_id: String,
+    pub state: String,
+}
+
 /// Anti-drift: event names registered here must equal the literals/constants
 /// used by the emit sites.
 #[test]

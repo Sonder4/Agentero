@@ -54,7 +54,10 @@ static ADAPTERS_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
 /// [`adapters_root`], so a missing call or directory simply disables the tier.
 pub fn init<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Ok(res) = app.path().resource_dir() {
-        let root = res.join("adapters");
+        // `resource_dir` is canonicalized, so on Windows it is `\\?\D:\…`.
+        // Keep the plain drive path: it is later handed to Node as a script
+        // argument, and Node cannot load the extended form.
+        let root = crate::core::process::windows_shell_path(&res.join("adapters"));
         if root.join("manifest.json").is_file() {
             let _ = ADAPTERS_ROOT.set(Some(root));
             return;
@@ -117,7 +120,7 @@ pub fn adapter_at(root: &Path, template_id: &str) -> Option<BundledAdapter> {
     let manifest: BundledManifest =
         serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).ok()?).ok()?;
     let info = manifest.adapters.get(template_id)?;
-    let entry_js = root.join(&info.entry);
+    let entry_js = crate::core::process::windows_shell_path(&root.join(&info.entry));
     if !entry_js.is_file() {
         return None;
     }
@@ -200,7 +203,64 @@ pub(crate) fn host_requirement(template_id: &str) -> Option<(&'static str, &'sta
 pub fn host_path(template_id: &str, child_env: &HashMap<String, String>) -> Option<PathBuf> {
     let (command, key) = host_requirement(template_id)?;
     let command = child_env.get(key).map(String::as_str).unwrap_or(command);
-    crate::features::agent::acp::client::resolve_command_in_agent_env(command, child_env)
+    let resolved =
+        crate::features::agent::acp::client::resolve_command_in_agent_env(command, child_env)?;
+    // claude-agent-acp spawns this path with execFile (no shell). An npm
+    // `claude.cmd` is not a Win32 image and fails with EINVAL; follow the
+    // shim to `claude.exe` when it names one. Codex keeps its `.cmd` because
+    // that adapter launches through a shell.
+    if key == "CLAUDE_CODE_EXECUTABLE" {
+        if let Some(exe) = claude_exe_from_npm_shim(&resolved) {
+            return Some(exe);
+        }
+    }
+    Some(resolved)
+}
+
+/// npm global shims set `dp0` to `%~dp0` and then quote
+/// `"%dp0%\node_modules\…\claude.exe"`. Return that binary only when it
+/// exists and has a PE header, so a `.cmd` we cannot prove stays unchanged.
+fn claude_exe_from_npm_shim(shim: &Path) -> Option<PathBuf> {
+    let extension = shim.extension()?.to_str()?;
+    if !extension.eq_ignore_ascii_case("cmd") && !extension.eq_ignore_ascii_case("bat") {
+        return None;
+    }
+    let text = std::fs::read_to_string(shim).ok()?;
+    let dir = shim.parent()?;
+    let mut prefix = dir
+        .to_string_lossy()
+        .trim_end_matches(['\\', '/'])
+        .to_string();
+    prefix.push('\\');
+    let mut rest = text.as_str();
+    while let Some(start) = rest.find('"') {
+        rest = &rest[start + 1..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        let quoted = &rest[..end];
+        rest = &rest[end + 1..];
+        // `%~dp0%` is not a prefix of `%dp0%`, but replace the longer form
+        // first so a shim that writes `%~dp0%` directly still resolves.
+        let expanded = quoted.replace("%~dp0%", &prefix).replace("%dp0%", &prefix);
+        if expanded.contains('%') || !expanded.to_ascii_lowercase().ends_with("claude.exe") {
+            continue;
+        }
+        let path = PathBuf::from(&expanded);
+        if has_mz_header(&path) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn has_mz_header(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0_u8; 2];
+    file.read_exact(&mut magic).is_ok() && magic == *b"MZ"
 }
 
 pub fn host_env_injection(
@@ -420,5 +480,35 @@ mod tests {
         // parse itself is exercised through node_major_of on the real PATH
         // only where a node exists, so keep this test hermetic.
         assert!(node_meets(None, Path::new("/nonexistent/node")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_path_follows_npm_claude_shim_to_pe_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("npm");
+        let exe = bin.join("node_modules/@anthropic-ai/claude-code/bin/claude.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"MZ not a real image").unwrap();
+        // npm's global launcher: `dp0` is `%~dp0`, then the quoted exe is run.
+        std::fs::write(
+            bin.join("claude.cmd"),
+            "@ECHO off\r\nSET dp0=%~dp0\r\n\"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\" %*\r\n",
+        )
+        .unwrap();
+        // A shim that does not name an exe must stay the `.cmd` itself.
+        std::fs::write(bin.join("codex.cmd"), "@echo off\r\n").unwrap();
+        let env = HashMap::from([(
+            "PATH".to_string(),
+            std::env::join_paths(std::iter::once(&bin))
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+        )]);
+
+        let claude = host_path("claude-acp", &env).expect("claude host");
+        assert_eq!(claude, exe);
+        let codex = host_path("codex-acp", &env).expect("codex host");
+        assert_eq!(codex, bin.join("codex.cmd"));
     }
 }

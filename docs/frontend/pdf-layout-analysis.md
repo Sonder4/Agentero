@@ -8,7 +8,7 @@
 |---|---|
 | 上游 | [EmbedPDF Layout Analysis](https://www.embedpdf.com/docs/react/headless/plugins/plugin-layout-analysis) |
 | 代码 | `src/lib/pdf/layout/`、`viewer/panels/figures-panel.tsx`（header 按钮）、`viewer/pdf/hooks/use-pdf-layout-{regions,run,hover,translate}.ts`、`viewer/pdf/layers/page-layers.tsx`（页内命中框与 bbox 叠加） |
-| 持久化 | Paper PDF 写入 `{paper}/source/layout.json`（raw text-enriched regions）+ `{paper}/source/layout-index.json`（侧栏同构，供 CLI）；`layoutAnalysisStore` 仍是运行时 UI store |
+| 持久化 | Paper PDF 写入 `{paper}/source/layout.json`（raw text-enriched regions）+ `{paper}/.src/layout-index.json`（侧栏同构，供 CLI）；`layoutAnalysisStore` 仍是运行时 UI store |
 
 ---
 
@@ -149,7 +149,7 @@ type LayoutSidecar = {
 
 #### 侧栏索引（CLI）
 
-`{paper}/source/layout-index.json` 在 **每次 merge 后**（含缓存命中只重算 merge）写出，与 Figures 轨 / hover 目标同源：
+`{paper}/.src/layout-index.json` 在 **每次 merge 后**（含缓存命中只重算 merge）写出，与 Figures 轨 / hover 目标同源：
 
 - 过滤：`isSidebarLayoutKind` + `LAYOUT_SIDEBAR_MIN_SCORE` + NMS（`dedupeLayoutRegions`）
 - 分区：figure（image+chart）→ table → algorithm → formula

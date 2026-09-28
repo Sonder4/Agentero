@@ -74,6 +74,20 @@ export type LayoutTranslateJobStatus =
 const LONG_TEXT_BOUNDARY_WINDOW = 700;
 const LAYOUT_TRANSLATE_RETRY_ROUNDS = 2;
 
+function isRetryableLayoutTranslateError(error: unknown): boolean {
+	const message = errorText(error).toLowerCase();
+	if (
+		/authentication required|unauthorized|forbidden|invalid api|no agent|model .*not found|unknown translation provider/.test(
+			message,
+		)
+	) {
+		return false;
+	}
+	return /timeout|timed out|429|rate.?limit|5\d\d|network|econn|connection|temporar|acp/.test(
+		message,
+	);
+}
+
 /**
  * Split long prose without dropping a single character. Prefer sentence, then
  * clause, then whitespace boundaries; hard-cut only when the source has none.
@@ -274,7 +288,10 @@ export async function runLayoutRegionTranslate(options: {
 	concurrency?: number;
 	onUpdate: (items: LayoutTranslateItem[]) => void;
 	paperKey?: string | null;
+	paperObjectId?: string | null;
 	vaultPath?: string | null;
+	paperAbsPath?: string | null;
+	contextRegions?: readonly PdfLayoutRegion[] | null;
 }): Promise<LayoutTranslateItem[]> {
 	const template = options.items.map((item) => ({ ...item }));
 	let expanded = expandOversizedItems(template);
@@ -290,7 +307,10 @@ export async function runLayoutRegionTranslate(options: {
 			signal: options.signal,
 			concurrency,
 			paperKey: options.paperKey,
+			paperObjectId: options.paperObjectId,
 			vaultPath: options.vaultPath,
+			paperAbsPath: options.paperAbsPath,
+			contextRegions: options.contextRegions,
 			onUpdate: (next) => {
 				expanded = mergeExpandedPass(expanded, next);
 				publish();
@@ -323,6 +343,7 @@ export async function runLayoutRegionTranslate(options: {
 		if (options.signal?.aborted) break;
 		const failed = expanded
 			.filter((item) => item.status === "error")
+			.filter((item) => isRetryableLayoutTranslateError(item.error ?? ""))
 			.map((item) => ({
 				...item,
 				status: "pending" as const,

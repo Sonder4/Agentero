@@ -5,7 +5,7 @@
 | 数据 | 权威 |
 |---|---|
 | 笔记、PDF、TeX、marks | Vault 普通文件 |
-| 论文集合与结构化 metadata | `.agentero/catalog.sqlite`（权威字段同步投影到 `papers/<id>/metadata.json` sidecar，rescan 可据此重建，见 [sync.md](sync.md)） |
+| 论文集合与结构化 metadata | `.agentero/catalog.sqlite`（权威字段同步投影到 `papers/<id>/.src/metadata.json` sidecar，rescan 可据此重建，见 [sync.md](sync.md)） |
 | 本机使用记录 | XDG `$XDG_DATA_HOME/agentero/usage.sqlite`（非 Vault） |
 | 双链索引 | 由 Markdown 重建（不落业务库） |
 
@@ -33,24 +33,28 @@ Vault/
 
 ```text
 papers/<id>/
+├── .src/               # Agentero generated sidecars (hidden)
+│   ├── metadata.json   # catalog row projection
+│   ├── layout-index.json
+│   ├── layout-translate.json
+│   ├── glossary.json
+│   ├── state.json
+│   └── citations.json
 ├── NOTES.md          # 人/Agent 笔记
-├── metadata.json     # catalog 行的 sidecar 投影（PaperRecord JSON）
 ├── <id>.pdf          # 可选
 ├── marks/            # 高亮/批注/提问/翻译 JSON 与 mark 自有资产
 ├── source/           # TeX 等（可懒加载）
-│   ├── agentero-cite.json  # 参考文献 sidecar（可重建，见 api.md paper_refs_parse）
-│   ├── layout.json         # PDF 版面 raw sidecar（可重建；merge/filter 可重复）
-│   └── layout-index.json   # 侧栏同构索引（CLI/Agent；post-merge figure/table/…）
+│   └── layout.json         # PDF 版面 raw sidecar（可重建；merge/filter 可重复）
 ├── PAPER.md          # 无 TeX 时的派生正文（本地 liteparse 或云端引擎，见 paper-import.md § 正文解析引擎）
 ├── assets/           # NOTES 内嵌图等
 └── attachments/      # 可选：用户支撑材料（supplement / 代码仓库等）
 ```
 
-`metadata.json` 不是独立 schema：它就是 `PaperRecord`（catalog 行 / sidecar / IPC 出参共用的唯一论文模型）的 pretty JSON 投影，每次 catalog upsert 重写，`paper_rescan` 可据此重建丢失的行。列词表与归一化行为见 [catalog.md](catalog.md)。
+`.src/metadata.json` 不是独立 schema：它就是 `PaperRecord`（catalog 行 / sidecar / IPC 出参共用的唯一论文模型）的 pretty JSON 投影，每次 catalog upsert 重写，`paper_rescan` 可据此重建丢失的行。列词表与归一化行为见 [catalog.md](catalog.md)。
 
-`attachments/` **不**在入库时预建空目录。仅当其中有文件时，文件树论文行才显示 chevron，并把该目录的子项直接挂在论文下（桶本身不占一行）。`source/`、`marks/`、`assets/`、主 PDF、`NOTES.md`、`PAPER.md`、`metadata.json` 仍不进入树。
+`attachments/` **不**在入库时预建空目录。仅当其中有文件时，文件树论文行才显示 chevron，并把该目录的子项直接挂在论文下（桶本身不占一行）。`.src/`、`source/`、`marks/`、`assets/`、主 PDF、`NOTES.md`、`PAPER.md` 仍不进入树。
 
-`layout-index.json` 与侧栏 Figures 同源（merge + score/NMS 后），供 `agentero layout list` / `mark add --region` 使用；**可从** `layout.json` 重算，分析完成或缓存命中时由桌面写入。详见 [../frontend/pdf-layout-analysis.md](../frontend/pdf-layout-analysis.md)。
+`.src/layout-index.json` 与侧栏 Figures 同源（merge + score/NMS 后），供 `agentero layout list` / `mark add --region` 使用；**可从** `source/layout.json` 重算，分析完成或缓存命中时由桌面写入。详见 [../frontend/pdf-layout-analysis.md](../frontend/pdf-layout-analysis.md)。
 
 ## marks/
 

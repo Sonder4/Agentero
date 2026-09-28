@@ -7,7 +7,7 @@ import { HtmlViewer, ImageViewer } from "@/components/viewer";
 import { RecycleBinView } from "@/components/workspace/recycle-bin-view";
 import { useSettings } from "@/hooks/use-app-stores";
 import type { PaperLibraryRow, PaperMetadata } from "@/lib/paper";
-import { isRemoteArxivPath } from "@/lib/paper";
+import { isRemoteArxivPath, isUnderPapers } from "@/lib/paper";
 import type { PdfVisualSessionTrace } from "@/lib/pdf/agent-trace/types";
 import type { PdfAskThread } from "@/lib/pdf/ask/types";
 import type { PdfHighlight } from "@/lib/pdf/highlight/types";
@@ -19,6 +19,17 @@ import { isPlainPdfPath } from "@/lib/workspace/viewer";
 
 // Heavyweight viewers are lazy-loaded so the EmbedPDF (PDFium) and Plate
 // editor bundles stay out of the initial chunk and are fetched on first use.
+/** Paper folder when the tab has NOTES.md; otherwise the PDF itself if it lives under papers/. */
+function paperAbsPathForTab(tab: DocTab): string | null {
+	if (tab.notesPath) {
+		return tab.notesPath.replace(/[\\/]NOTES\.md$/i, "");
+	}
+	if (tab.path && isUnderPapers(tab.path) && /\.pdf$/i.test(tab.path)) {
+		return tab.path;
+	}
+	return null;
+}
+
 const PdfViewer = lazy(() =>
 	import("@/components/viewer/pdf/pdf-viewer").then((m) => ({
 		default: m.PdfViewer,
@@ -362,11 +373,7 @@ export const DocView = memo(function DocView({
 						source={tab.pdfUrl}
 						sourceBytes={tab.pdfBytes}
 						docId={tab.id}
-						paperAbsPath={
-							tab.notesPath
-								? tab.notesPath.replace(/[\\/]NOTES\.md$/i, "")
-								: null
-						}
+						paperAbsPath={paperAbsPathForTab(tab)}
 						paperRelPath={
 							tab.paperMeta?.path ?? paperRelFromNotes(tab.notesPath, vaultPath)
 						}
@@ -399,11 +406,7 @@ export const DocView = memo(function DocView({
 						source={tab.pdfUrl}
 						sourceBytes={tab.pdfBytes}
 						docId={tab.id}
-						paperAbsPath={
-							tab.notesPath
-								? tab.notesPath.replace(/[\\/]NOTES\.md$/i, "")
-								: null
-						}
+						paperAbsPath={paperAbsPathForTab(tab)}
 						paperRelPath={
 							tab.paperMeta?.path ?? paperRelFromNotes(tab.notesPath, vaultPath)
 						}

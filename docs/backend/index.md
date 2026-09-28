@@ -26,6 +26,7 @@ crates/agentero-core/src/   # tauri 无关基座 + 数据域（agentero-core cra
   features/     # catalog、vault（tree/trash/rename/doctor）、wiki、import、
                 # zotero codec/io、scholar_api、pdf_parse、refs、feeds、
                 # translate、pdf locate/marks、lifecycle、open_request
+  features/web_ai/ # 登录态 Provider WebView、桥校验、附件转交、会话绑定
 src-tauri/src/
   app/          # run()、menu、logging、command 注册、open_request desktop 壳
   core/         # 桥接层：re-export agentero-core；app_handle 桥（TauriHostHooks）、telemetry、usage::commands
@@ -34,6 +35,7 @@ src-tauri/src/
     paper/      # catalog commands、import 壳（job_runners/remote_ops/recognize）、
                 # analyze/layout、body_engines（云端 parse 引擎）、zotero db、discovery 站点代理
     web/        # agentero-web 通用网页代理（allowlist + web_proxy_allow_host，网页论文 iframe 划词用）
+    web_ai/     # ChatGPT/Gemini/DeepSeek/Kimi/GLM WebView host 与受限页面桥
     pdf/        # export
     markdown/   # wiki commands、search
     system/     # settings、builtin（构建期内置 provider 凭证）
@@ -125,5 +127,6 @@ src-tauri/src/
 | 日志 | [logging.md](logging.md) |
 | 遥测 | [telemetry.md](telemetry.md) |
 | 使用记录 | [usage.md](usage.md) |
+| Web AI Host | [web-ai.md](web-ai.md) |
 | CLI | [cli.md](cli.md) |
 | API 全表 | [api.md](api.md) |

@@ -412,6 +412,10 @@
 		"dualPane": {
 			"label": "Open rendered translation in a side window"
 		},
+		"layoutConcurrency": {
+			"label": "PDF full-text translation concurrency",
+			"description": "Number of text blocks translated in parallel. Higher values can be faster but may trigger rate limits."
+		},
 		"providerConfig": {
 			"section": "API Services",
 			"confirm": "Confirm",

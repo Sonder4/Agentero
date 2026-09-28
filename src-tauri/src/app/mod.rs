@@ -113,6 +113,9 @@ pub fn run() {
         .manage(AgentRegistry::load())
         .manage(AgentRunController::new())
         .manage(std::sync::Arc::new(
+            crate::features::agent::service::PdfLayoutTranslationLimiter::new(),
+        ))
+        .manage(std::sync::Arc::new(
             crate::features::agent::session::pool::AgentWarmPool::new(),
         ))
         .manage(crate::features::agent::AgentWarmGate::new())
@@ -131,6 +134,13 @@ pub fn run() {
         .manage(ExternalRenameRepairStore::new())
         .manage(crate::integration::sync::SyncService::default())
         .manage(crate::app::open_request::PendingVaultOpen::new());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.manage(Arc::new(
+            crate::features::web_ai::controller::WebAiController::new(),
+        ));
+    }
 
     #[cfg(not(target_os = "ios"))]
     {

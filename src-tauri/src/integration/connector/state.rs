@@ -951,7 +951,7 @@ impl ConnectorController {
                 session
                     .fs
                     .write(
-                        &format!("{path}/metadata.json"),
+                        &format!("{path}/.src/metadata.json"),
                         &metadata,
                         crate::core::fs::WriteOpts {
                             create_parents: true,

@@ -88,7 +88,7 @@ fn is_paper_unit(dir: &Path) -> bool {
     if dir.join("NOTES.md").is_file() {
         return true;
     }
-    if dir.join("metadata.json").is_file() {
+    if dir.join(".src").join("metadata.json").is_file() {
         return true;
     }
     // `{id}.pdf` at paper root (Agentero layout)

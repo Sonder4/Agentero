@@ -44,6 +44,7 @@ src-tauri/target/
 
 # Local scratch / demo vaults
 /tmp/
+/paper-vault/
 
 # Brainstorming visual-companion scratch
 .superpowers/

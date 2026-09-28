@@ -205,7 +205,7 @@ pub async fn paper_commit(
         )
         .await?;
 
-        // Catalog SQLite is authoritative; metadata.json is a projection.
+        // Catalog SQLite is authoritative; .src/metadata.json is a projection.
         let record = meta.clone().at_path(&path_rel);
         papers::upsert_paper(vault, &record)?;
         Ok(())

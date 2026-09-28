@@ -329,10 +329,10 @@ export const commands = {
 	 *  empty strings clear). Marks the row `meta_source = "manual"`.
 	 */
 	paperUpdateMeta: (args: PaperUpdateMetaArgs) => __TAURI_INVOKE<ApiResult<PaperRecord_Serialize>>("paper_update_meta", { args }),
-	/**  Replace catalog tags for a paper (syncs metadata.json projection). */
+	/**  Replace catalog tags for a paper (syncs `.src/metadata.json` projection). */
 	paperSetTags: (args: PaperSetTagsArgs) => __TAURI_INVOKE<ApiResult<PaperRecord_Serialize>>("paper_set_tags", { args }),
 	/**
-	 *  Rebuild catalog rows from `papers/` metadata.json — recovers papers that are
+	 *  Rebuild catalog rows from `papers/` `.src/metadata.json` — recovers papers that are
 	 *  on disk but missing from the catalog (added externally, or a lost row).
 	 */
 	paperRescan: (args: PaperRescanArgs) => __TAURI_INVOKE<ApiResult<PaperRescanResult>>("paper_rescan", { args }),
@@ -574,6 +574,29 @@ export const commands = {
 	 *  fails to load.
 	 */
 	webProxyAllowHost: (args: WebProxyAllowHostArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_proxy_allow_host", { args })),
+	webAiProviders: () => typedError<ApiResult<WebAiProvider[]>, string>(__TAURI_INVOKE("web_ai_providers")),
+	webAiStatus: (providerId: string | null) => typedError<ApiResult<WebAiStatus[]>, string>(__TAURI_INVOKE("web_ai_status", { providerId })),
+	webAiOpen: (args: WebAiOpenArgs) => typedError<ApiResult<WebAiStatus>, string>(__TAURI_INVOKE("web_ai_open", { args })),
+	webAiClose: (args: WebAiProviderArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_close", { args })),
+	webAiView: (args: WebAiViewArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_view", { args })),
+	webAiSetBounds: (args: WebAiBoundsArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_set_bounds", { args })),
+	webAiBindConversation: (args: WebAiBindArgs) => typedError<ApiResult<WebAiConversationBinding>, string>(__TAURI_INVOKE("web_ai_bind_conversation", { args })),
+	webAiUnbindConversation: (args: WebAiBindArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_unbind_conversation", { args })),
+	webAiTransferText: (args: WebAiTransferTextArgs) => typedError<ApiResult<WebAiTransferResult>, string>(__TAURI_INVOKE("web_ai_transfer_text", { args })),
+	webAiTransferSelection: (args: WebAiTransferTextArgs) => typedError<ApiResult<WebAiTransferResult>, string>(__TAURI_INVOKE("web_ai_transfer_selection", { args })),
+	webAiTransferImage: (args: WebAiTransferFileArgs) => typedError<ApiResult<WebAiTransferResult>, string>(__TAURI_INVOKE("web_ai_transfer_image", { args })),
+	webAiTransferPdf: (args: WebAiTransferFileArgs) => typedError<ApiResult<WebAiTransferResult>, string>(__TAURI_INVOKE("web_ai_transfer_pdf", { args })),
+	webAiPrepareContext: (args: WebAiContextArgs) => typedError<ApiResult<WebAiTransferResult>, string>(__TAURI_INVOKE("web_ai_prepare_context", { args })),
+	webAiConversationRename: (args: WebAiRenameArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_conversation_rename", { args })),
+	webAiProjectPrepare: (args: WebAiProjectArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_project_prepare", { args })),
+	webAiProjectCreate: (args: WebAiProjectArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_project_create", { args })),
+	webAiCopyToNotes: (args: WebAiCopyArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_copy_to_notes", { args })),
+	webAiConnectorStatus: () => typedError<ApiResult<WebAiConnectorStatus>, string>(__TAURI_INVOKE("web_ai_connector_status")),
+	webAiConnectorStart: () => typedError<ApiResult<WebAiConnectorStatus>, string>(__TAURI_INVOKE("web_ai_connector_start")),
+	webAiConnectorPair: () => typedError<ApiResult<WebAiConnectorStatus>, string>(__TAURI_INVOKE("web_ai_connector_pair")),
+	webAiConnectorDisconnect: () => typedError<ApiResult<WebAiConnectorStatus>, string>(__TAURI_INVOKE("web_ai_connector_disconnect")),
+	webAiResetProvider: (args: WebAiProviderArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_reset_provider", { args })),
+	webAiPageEvent: (args: WebAiPageEventArgs) => typedError<ApiResult<boolean>, string>(__TAURI_INVOKE("web_ai_page_event", { args })),
 	/**
 	 *  Detect available LaTeX engines on the system.
 	 *  Returns the engines that can actually compile — latexmk (the orchestrator)
@@ -651,6 +674,12 @@ export const events = {
 	vaultFileChanged: makeEvent<VaultFileChangedEvent_Deserialize>("vault:file-changed"),
 	vaultOpenError: makeEvent<VaultOpenErrorEvent>("vault:open-error"),
 	vaultOpenRequest: makeEvent<VaultOpenRequestEvent>("vault:open-request"),
+	webAiConnector: makeEvent<WebAiConnectorEvent>("web-ai:connector"),
+	webAiCopy: makeEvent<WebAiCopyEvent>("web-ai:copy"),
+	webAiNavigation: makeEvent<WebAiNavigationEvent>("web-ai:navigation"),
+	webAiSelection: makeEvent<WebAiSelectionEvent>("web-ai:selection"),
+	webAiState: makeEvent<WebAiStateEvent>("web-ai:state"),
+	webAiTransfer: makeEvent<WebAiTransferEvent>("web-ai:transfer"),
 	windowClosed: makeEvent<WindowClosedEvent_Deserialize>("window:closed"),
 };
 
@@ -3419,6 +3448,15 @@ export type OpenInTerminalResult = {
 	cwd: string,
 };
 
+export type PageEvent = {
+	providerId: string,
+	nonce: string,
+	kind: PageEventKind,
+	payload: string | null,
+};
+
+export type PageEventKind = "handshake" | "navigation" | "selection" | "composer-state" | "attachment-state";
+
 export type PairingRequest = {
 	requestId: string,
 	deviceId: string,
@@ -3660,13 +3698,13 @@ export type PaperReadingActivityBatchArgs = {
 };
 
 /**
- *  The single paper model: catalog row, `metadata.json` sidecar, IPC payload.
+ *  The single paper model: catalog row, `.src/metadata.json` sidecar, IPC payload.
  *  JSON stays snake_case to match the frontend's `PaperMetadata`.
  */
 export type PaperRecord = PaperRecord_Serialize | PaperRecord_Deserialize;
 
 /**
- *  The single paper model: catalog row, `metadata.json` sidecar, IPC payload.
+ *  The single paper model: catalog row, `.src/metadata.json` sidecar, IPC payload.
  *  JSON stays snake_case to match the frontend's `PaperMetadata`.
  */
 export type PaperRecord_Deserialize = {
@@ -3723,7 +3761,7 @@ export type PaperRecord_Deserialize = {
 };
 
 /**
- *  The single paper model: catalog row, `metadata.json` sidecar, IPC payload.
+ *  The single paper model: catalog row, `.src/metadata.json` sidecar, IPC payload.
  *  JSON stays snake_case to match the frontend's `PaperMetadata`.
  */
 export type PaperRecord_Serialize = {
@@ -4624,6 +4662,8 @@ export type TranslateSettings = {
 	providerConfigs?: { [key in string]: TranslateProviderConfig },
 	autoTranslateSelection?: boolean,
 	dualPaneTranslate?: boolean,
+	/**  Number of PDF layout translation workers (clamped to 1..=8). */
+	layoutTranslateConcurrency?: number,
 	agentId?: string,
 	modelId?: string,
 	/**
@@ -4945,6 +4985,190 @@ export type WarmResult_Serialize = {
 	usageUsed?: number | null,
 	usageSize?: number | null,
 	error?: string | null,
+};
+
+export type WebAiBindArgs = {
+	providerId: string,
+	paper: WebAiPaperRef,
+	conversationUrl: string,
+	title: string | null,
+};
+
+export type WebAiBounds = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	scaleFactor: number | null,
+};
+
+export type WebAiBoundsArgs = {
+	providerId: string,
+	bounds: WebAiBounds,
+};
+
+/**
+ *  A provider capability exposed to the renderer.
+ * 
+ *  These are feature declarations, not proof that the current page is logged
+ *  in or that a particular DOM revision is available.
+ */
+export type WebAiCapabilities = {
+	text: boolean,
+	image: boolean,
+	pdf: boolean,
+	conversationRename: boolean,
+	projects: boolean,
+	connector: boolean,
+};
+
+export type WebAiConnectorEvent = {
+	providerId: string,
+	state: string,
+};
+
+export type WebAiConnectorStatus = {
+	providerId: string,
+	state: string,
+	message: string | null,
+};
+
+export type WebAiContextArgs = {
+	providerId: string,
+	text: string,
+	paperId: string | null,
+	page: number | null,
+};
+
+/**  A persisted paper/provider conversation binding. */
+export type WebAiConversationBinding = {
+	providerId: string,
+	vaultId: string,
+	paperId: string,
+	conversationUrl: string,
+	conversationId: string,
+	title: string | null,
+	updatedAt: string,
+};
+
+export type WebAiCopyArgs = {
+	providerId: string,
+	paperId: string | null,
+	answer: string,
+};
+
+export type WebAiCopyEvent = {
+	providerId: string,
+	paperId: string | null,
+};
+
+export type WebAiNavigationEvent = PageEvent;
+
+export type WebAiOpenArgs = {
+	providerId: string,
+	bounds: WebAiBounds | null,
+};
+
+export type WebAiPageEventArgs = {
+	event: PageEvent,
+};
+
+/**  Stable paper identity used by all provider-scoped commands. */
+export type WebAiPaperRef = {
+	vaultId: string,
+	paperId: string,
+};
+
+export type WebAiProjectArgs = {
+	providerId: string,
+	name: string | null,
+};
+
+/**
+ *  Public provider metadata.  It deliberately contains no cookies, tokens,
+ *  selectors, or browser storage paths.
+ */
+export type WebAiProvider = {
+	id: string,
+	name: string,
+	homeUrl: string,
+	origins: string[],
+	capabilities: WebAiCapabilities,
+};
+
+export type WebAiProviderArgs = {
+	providerId: string,
+};
+
+export type WebAiRenameArgs = {
+	providerId: string,
+	paper: WebAiPaperRef,
+	title: string | null,
+};
+
+export type WebAiSelectionEvent = WebAiSelectionPayload;
+
+export type WebAiSelectionPayload = {
+	providerId: string,
+	selectionId: string,
+	page: number | null,
+	byteLength: number,
+};
+
+export type WebAiStateEvent = WebAiStatus;
+
+/**
+ *  Host status returned to the renderer.  `view` is intentionally a small
+ *  state vocabulary until a platform WebView controller is added.
+ */
+export type WebAiStatus = {
+	view: string,
+	activeProviderId: string | null,
+	activeVaultId: string | null,
+	activePaperId: string | null,
+	url: string | null,
+	conversationId: string | null,
+	authenticated: string,
+	bridgeVersion: string | null,
+	fallback: string | null,
+	bindings: WebAiConversationBinding[],
+};
+
+export type WebAiTransferEvent = WebAiTransferResult;
+
+export type WebAiTransferFileArgs = {
+	providerId: string,
+	path: string,
+	paperId: string | null,
+	page: number | null,
+};
+
+/**
+ *  Result shared by text/image/PDF transfer adapters.
+ * 
+ *  `requires_send` is always true for web AI: host-side preparation must never
+ *  click a provider's send button.
+ */
+export type WebAiTransferResult = {
+	providerId: string,
+	draftReady: boolean,
+	attachmentReady: boolean,
+	requiresSend: boolean,
+	message: string | null,
+	paperId: string | null,
+	page: number | null,
+};
+
+export type WebAiTransferTextArgs = {
+	providerId: string,
+	text: string,
+	paperId: string | null,
+	page: number | null,
+};
+
+export type WebAiViewArgs = {
+	providerId: string,
+	visible: boolean,
 };
 
 export type WebProxyAllowHostArgs = {

@@ -258,5 +258,13 @@
 		"connector": "正在保存 Connector 附件",
 		"connectorComplete": "Connector 附件已就绪",
 		"connectorFailed": "Connector 附件失败"
+	},
+	"webAi": {
+		"title": "网页 AI",
+		"provider": "服务商",
+		"open": "打开",
+		"prepare": "准备",
+		"textPlaceholder": "准备要交给网页 AI 的文本…",
+		"desktopOnly": "网页 AI 目前仅支持桌面端。"
 	}
 }

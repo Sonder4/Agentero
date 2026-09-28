@@ -1395,8 +1395,9 @@ fn layout_list_and_mark_add_region() {
             }
         ]
     });
+    fs::create_dir_all(paper.join(".src")).unwrap();
     fs::write(
-        paper.join("source").join("layout-index.json"),
+        paper.join(".src").join("layout-index.json"),
         format!("{}\n", serde_json::to_string_pretty(&index).unwrap()),
     )
     .unwrap();
@@ -1568,8 +1569,9 @@ fn layout_list_section_from_raw_layout() {
             {"id":"figure-1","stableKey":"a","kind":"image","section":"figure","page":2,"pageIndex":1,"bbox":{"x":0.1,"y":0.2,"w":0.5,"h":0.3},"score":0.9,"title":"Figure 1","layoutRegionId":"raw-fig-1"}
         ]
     });
+    fs::create_dir_all(paper.join(".src")).unwrap();
     fs::write(
-        paper.join("source").join("layout-index.json"),
+        paper.join(".src").join("layout-index.json"),
         format!("{}\n", serde_json::to_string_pretty(&index).unwrap()),
     )
     .unwrap();

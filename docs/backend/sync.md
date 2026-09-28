@@ -35,7 +35,7 @@
 
 ## 同步范围（Sync Scope）
 
-论文库中体积大且**可再生**的附件可以按设备排除，节省云端空间；笔记、`metadata.json` sidecar、`marks/`、`assets/` 永远同步（小且不可再生）。
+论文库中体积大且**可再生**的附件可以按设备排除，节省云端空间；笔记、`.src/metadata.json` sidecar、`marks/`、`assets/` 永远同步（小且不可再生）。
 
 - **分类**（`snapshot.rs` `scope_category`，仅识别约定论文布局）：
   - `pdf` — `papers/<id>/<id>.pdf`（论文根级 PDF；`source/`、`attachments/` 内的 PDF 跟随所在分类）
@@ -72,7 +72,7 @@
 ## 身份与 Catalog 联动
 
 - `vault.json`（远端）与 `.agentero/vault.json`（本地）配对：从未同步过的 Vault 可加入既有 remote（采纳其 id）；有同步历史的 Vault 拒绝外来 remote。
-- 论文权威字段已 sidecar 化：每次 `upsert_paper` 同步投影到 `papers/<id>/metadata.json`；`paper_rescan` 优先从 sidecar 恢复（sidecar 较新则回灌 DB）。因此同步只处理普通文件，`catalog.sqlite` 不出 Vault；拉取后引擎自动 `rebuild_from_disk` + `prune_missing`。
+- 论文权威字段已 sidecar 化：每次 `upsert_paper` 同步投影到 `papers/<id>/.src/metadata.json`；`paper_rescan` 优先从 sidecar 恢复（sidecar 较新则回灌 DB）。因此同步只处理普通文件，`catalog.sqlite` 不出 Vault；拉取后引擎自动 `rebuild_from_disk` + `prune_missing`。
 
 ## 前端
 

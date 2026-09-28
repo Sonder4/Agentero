@@ -52,6 +52,11 @@ export type TranslateSettings = {
 	 */
 	dualPaneTranslate: boolean;
 	/**
+	 * Number of PDF layout text blocks translated in parallel. The settings
+	 * boundary clamps this to the supported range (1–8).
+	 */
+	layoutTranslateConcurrency: number;
+	/**
 	 * Agent seat for provider === "agent".
 	 * Empty = follow registry defaultId.
 	 */
@@ -96,6 +101,20 @@ export type TranslateTask = {
 		quote?: string;
 		/** e.g. "pdf-selection" */
 		surface?: string;
+		/** Read-only paragraph context for PDF layout translation. */
+		previousParagraph?: string;
+		nextParagraph?: string;
+		previousTranslatedExcerpt?: string;
+		/** Protected formulas / table and figure context, never translated. */
+		relatedFormulas?: readonly string[];
+		relatedTables?: readonly string[];
+		relatedFigures?: readonly string[];
+		/** Object-scoped glossary rows: source | aliases | target. */
+		glossary?: readonly {
+			source: string;
+			aliases?: readonly string[];
+			target: string;
+		}[];
 	};
 };
 

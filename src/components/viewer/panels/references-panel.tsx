@@ -63,7 +63,7 @@ function citationMatchesFilter(citation: Citation, needle: string): boolean {
 
 /**
  * Right-sidebar reference list for the active paper: compact citation cards
- * from the `agentero-cite.json` sidecar (parse on demand, filter, open
+ * from the `.src/citations.json` sidecar (parse on demand, filter, open
  * matched library papers, import unmatched ones via the magic-wand pipeline).
  */
 export function ReferencesPanel({

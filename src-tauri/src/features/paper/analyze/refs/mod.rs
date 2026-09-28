@@ -28,7 +28,11 @@ pub fn register_job_runners(center: &crate::features::jobs::JobCenter) {
     center.register_runner(JobKind::ParseRefs, Arc::new(parse_refs_runner));
     // Reconcile backfill: a paper needs ParseRefs when its cite sidecar is absent.
     center.register_backfill_probe(JobKind::ParseRefs, |vault, path| {
-        !vault.join(path).join("source").join(SIDECAR_FILE).is_file()
+        !vault
+            .join(path)
+            .join(GENERATED_DIR)
+            .join(SIDECAR_FILE)
+            .is_file()
     });
 }
 

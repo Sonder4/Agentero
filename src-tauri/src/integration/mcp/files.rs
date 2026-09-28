@@ -256,7 +256,8 @@ fn reject_managed(rel: &str) -> Result<(), AppError> {
         || rel.ends_with("/catalog.sqlite")
         || rel == "marks/annotations.json"
         || rel.ends_with("/marks/annotations.json")
-        || rel.ends_with("/source/layout-index.json")
+        || rel.ends_with("/.src/layout-index.json")
+        || rel.ends_with("/.src/citations.json")
         || rel.ends_with("/source/layout.json");
     if managed {
         return Err(AppError::message(

@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(scope_category("papers/x/source/fig.pdf"), Some("source"));
         // Always-synced content and non-paper paths.
         assert_eq!(scope_category("papers/x/NOTES.md"), None);
-        assert_eq!(scope_category("papers/x/metadata.json"), None);
+        assert_eq!(scope_category("papers/x/.src/metadata.json"), None);
         assert_eq!(scope_category("papers/x/marks/a.json"), None);
         assert_eq!(scope_category("papers/x/assets/img.png"), None);
         assert_eq!(scope_category("papers/x/attachments"), Some("attachments"));

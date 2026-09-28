@@ -798,7 +798,9 @@ pub struct ClearAndReparseResult {
     pub paper_enqueued: u32,
 }
 
-const LAYOUT_SIDECAR_FILES: &[&str] = &["layout.json", "layout-index.json"];
+const LAYOUT_RAW_FILE: &str = "layout.json";
+const LAYOUT_INDEX_FILE: &str = "layout-index.json";
+const GENERATED_DIR: &str = ".src";
 const PAPER_MD_FILE: &str = "PAPER.md";
 
 fn remove_file_best_effort(path: &Path) -> Result<bool, AppError> {
@@ -878,10 +880,11 @@ async fn clear_parse_results_core(
 
         if matches!(scope, ParseResultScope::Layout | ParseResultScope::All) {
             let source_dir = paper_dir.join("source");
-            for file in LAYOUT_SIDECAR_FILES {
-                if remove_file_best_effort(&source_dir.join(file))? {
-                    files_removed += 1;
-                }
+            if remove_file_best_effort(&source_dir.join(LAYOUT_RAW_FILE))? {
+                files_removed += 1;
+            }
+            if remove_file_best_effort(&paper_dir.join(GENERATED_DIR).join(LAYOUT_INDEX_FILE))? {
+                files_removed += 1;
             }
         }
 

@@ -443,7 +443,7 @@ Agent：`agent_run_once` / `agent_warm` 在 vault 为 `remote:…` 时经 SSH `b
 
 - **行为**
   - 校验 Vault 结构（至少存在 `papers/`、`notes/`；确保 `.agentero/catalog.sqlite` 可打开或可初始化）。
-  - 打开 catalog、执行 schema migration；若存在历史 `papers/*/metadata.json` 且 catalog 为空则导入（见 catalog 迁移）。
+  - 打开 catalog、执行 schema migration；若存在历史 `papers/*/.src/metadata.json` 且 catalog 为空则导入（见 catalog 迁移）。
   - 文件监听由前端打开 Vault 后调用 `fs_watch_start`（已落地；见上），非本命令内隐式启动。
   - 返回完整文件树。
 
@@ -1109,7 +1109,7 @@ Agent：`agent_run_once` / `agent_warm` 在 vault 为 `remote:…` 时经 SSH `b
   }
   ```
 
-- **落盘**：`{paper}/source/agentero-cite.json`、`{paper}/source/agentero-figures.json`、`{paper}/source/agentero-figures/*.png`。
+- **落盘**：`{paper}/.src/citations.json`、`{paper}/source/agentero-figures.json`、`{paper}/source/agentero-figures/*.png`。
 - **行为**：有 TeX 时解析 TeX/Bib 并用 PDF bbox 做定位；无 TeX 时使用 liteparse。不得覆盖原始 PDF、TeX/Bib、`NOTES.md` 或 `PAPER.md`。Sidecar schema 待补充独立文档。
 
 #### `paper_export`
@@ -1149,7 +1149,7 @@ Agent：`agent_run_once` / `agent_warm` 在 vault 为 `remote:…` 时经 SSH `b
 
 #### `paper_refs_parse`
 
-解析一篇论文的参考文献并写入可重建 sidecar `{paper}/source/agentero-cite.json`。优先级：在线结构化（Semantic Scholar `paper/{id}/references` → Crossref `works/{doi}.reference`）→ 本地 `source/*.bbl` / `*.bib` / 内联 `thebibliography`。本地条目提供编号顺序与 raw 文本，在线条目按 DOI / arXiv / 标题对齐后覆盖元数据；解析后按 DOI → arXiv → 归一化标题匹配库内论文写入 `localMatch`。输入指纹（DOI/arXiv + bib/bbl/tex 文件清单）未变时直接返回缓存，不重复请求 API。
+解析一篇论文的参考文献并写入可重建 sidecar `{paper}/.src/citations.json`。优先级：在线结构化（Semantic Scholar `paper/{id}/references` → Crossref `works/{doi}.reference`）→ 本地 `source/*.bbl` / `*.bib` / 内联 `thebibliography`。本地条目提供编号顺序与 raw 文本，在线条目按 DOI / arXiv / 标题对齐后覆盖元数据；解析后按 DOI → arXiv → 归一化标题匹配库内论文写入 `localMatch`。输入指纹（DOI/arXiv + bib/bbl/tex 文件清单）未变时直接返回缓存，不重复请求 API。
 
 - **参数**（`args`）：
 
@@ -2443,7 +2443,7 @@ CLI 不再暴露 usage 命令；查询与清理通过桌面端设置 / Host API 
 | `export bib` | `lookup::export_catalog`（`-o`/`--out` 写文件；全局格式用 `--json`） |
 | `doctor` / `doctor fix` | 聚合诊断与 aliases / visual-marks 修复 |
 | `doctor wiki` | 只读双链语义检查（`WikiIndex`） |
-| `layout list\|get` | `{paper}/source/layout-index.json` |
+| `layout list\|get` | `{paper}/.src/layout-index.json` |
 | `mark list\|get\|add\|delete` | `{paper}/marks/`（区域锚点优先） |
 
 构建：`cargo build -p agentero-cli` → bin `agentero`。
@@ -2454,7 +2454,7 @@ CLI 不再暴露 usage 命令；查询与清理通过桌面端设置 / Host API 
 
 - `VaultInfo` / `RecentVault`
 - `FileNode`
-- `PaperRecord`（唯一论文模型：catalog 行 / `metadata.json` sidecar / IPC 出参）/ `PaperKind`（`type` 列枚举）/ `PaperListRow`（`paper_list` 投影 = `PaperRecord` + `has_pdf`）
+- `PaperRecord`（唯一论文模型：catalog 行 / `.src/metadata.json` sidecar / IPC 出参）/ `PaperKind`（`type` 列枚举）/ `PaperListRow`（`paper_list` 投影 = `PaperRecord` + `has_pdf`）
 - 前端 `PaperMetadata` 只是 `PaperRecord_Serialize` 的派生别名（`src/lib/paper/types.ts`），**不是** Rust 类型
 - `Highlight`
 - `ArxivCandidate` / `ArxivImportResult`

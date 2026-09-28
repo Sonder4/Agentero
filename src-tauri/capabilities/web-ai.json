@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "web-ai-provider",
+	"description": "Provider WebViews have no filesystem, shell, dialog, Vault, or MCP permissions.",
+	"webviews": ["agentero-web-ai-*", "web-ai-window-*"],
+	"permissions": []
+}

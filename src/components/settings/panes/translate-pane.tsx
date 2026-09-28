@@ -64,7 +64,10 @@ import {
 	probeCommercialMtProvider,
 	probeFreeMtProviders,
 } from "@/lib/translate";
-import { EMPTY_TRANSLATE_PROVIDER_CONFIG } from "@/lib/translate/defaults";
+import {
+	EMPTY_TRANSLATE_PROVIDER_CONFIG,
+	LAYOUT_TRANSLATE_CONCURRENCY_OPTIONS,
+} from "@/lib/translate/defaults";
 import type { ProbeStatus } from "@/lib/ui/probe-status";
 
 /** Resolve API key for save/probe: draft wins; otherwise keep stored (may be mask). */
@@ -442,6 +445,28 @@ export function TranslatePane({
 						checked={tr.dualPaneTranslate}
 						onCheckedChange={(v) => patchTranslate({ dualPaneTranslate: v })}
 					/>
+				</SettingsRow>
+				<SettingsRow
+					label={t("translate.layoutConcurrency.label")}
+					description={t("translate.layoutConcurrency.description")}
+				>
+					<Select
+						value={String(tr.layoutTranslateConcurrency)}
+						onValueChange={(value) =>
+							patchTranslate({ layoutTranslateConcurrency: Number(value) })
+						}
+					>
+						<SelectTrigger size="sm" className="min-w-[100px] max-w-[120px]">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{LAYOUT_TRANSLATE_CONCURRENCY_OPTIONS.map((value) => (
+								<SelectItem key={value} value={String(value)}>
+									{value}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</SettingsRow>
 			</SettingsGroup>
 

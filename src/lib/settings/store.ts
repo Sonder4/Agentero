@@ -41,7 +41,11 @@ import {
 	type LibraryColumnPref,
 	type PdfAskSettings,
 } from "@/lib/settings/types";
-import { DEFAULT_TRANSLATE_SETTINGS } from "@/lib/translate/defaults";
+import {
+	clampLayoutTranslateConcurrency,
+	DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+	DEFAULT_TRANSLATE_SETTINGS,
+} from "@/lib/translate/defaults";
 import {
 	isCommercialTranslateProvider,
 	isTranslateProviderId,
@@ -628,6 +632,13 @@ function normalizeTranslateSettings(
 	if (typeof raw.dualPaneTranslate === "boolean") {
 		base.dualPaneTranslate = raw.dualPaneTranslate;
 	}
+	const rawConcurrency = (raw as { layoutTranslateConcurrency?: unknown })
+		.layoutTranslateConcurrency;
+	base.layoutTranslateConcurrency = clampLayoutTranslateConcurrency(
+		typeof rawConcurrency === "number"
+			? rawConcurrency
+			: DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+	);
 	if (typeof raw.agentId === "string") {
 		base.agentId = raw.agentId.trim();
 	}

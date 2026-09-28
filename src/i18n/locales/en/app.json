@@ -258,5 +258,13 @@
 		"connector": "Saving Connector attachment",
 		"connectorComplete": "Connector attachment ready",
 		"connectorFailed": "Connector attachment failed"
+	},
+	"webAi": {
+		"title": "Web AI",
+		"provider": "Provider",
+		"open": "Open",
+		"prepare": "Prepare",
+		"textPlaceholder": "Prepare text for the provider…",
+		"desktopOnly": "Web AI is available on desktop only."
 	}
 }

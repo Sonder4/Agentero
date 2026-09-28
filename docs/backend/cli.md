@@ -46,7 +46,7 @@ agentero describe paper_list --json   # MCP tool 名亦可
 
 ### 版面索引与区域批注（已实现）
 
-侧栏 Figures 同源列表落在 `{paper}/source/layout-index.json`（由桌面版面分析在 merge 后写入；raw 仍为 `source/layout.json`）。
+侧栏 Figures 同源列表落在 `{paper}/.src/layout-index.json`（由桌面版面分析在 merge 后写入；raw 仍为 `source/layout.json`）。
 
 ```bash
 # 列出图 / 表 / 算法 / 公式 / 章节标题（--kind 可重复，OR）

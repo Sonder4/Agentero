@@ -240,7 +240,7 @@ agentero mark delete <paper> <id> -y --json
 
 | 优先级 | 项 | 状态 |
 |---|---|---|
-| P0 | 写出 `source/layout-index.json`（与侧栏同源） | **已实现**（layout 分析 merge 后） |
+| P0 | 写出 `.src/layout-index.json`（与侧栏同源） | **已实现**（layout 分析 merge 后） |
 | P0 | CLI `layout list\|get` + `mark add --region` | **已实现** |
 | P1 | Skill 教 Agent：`layout list` → `mark add --region` | **已改 agentero-cli v2** |
 | P2 | 桌面打开时对 `layoutRef` mark 稳定出针/黄底 | 依赖现有 rects；可再打磨 |

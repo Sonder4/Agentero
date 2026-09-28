@@ -81,7 +81,7 @@ Plate + `@platejs/markdown`。普通文本粘贴默认按 Markdown 解析。`\$a
 
 ### 双链与图谱
 
-嵌套标题双链：`[[文件#外层标题#内层标题]]`。Wiki 索引 `.md` 变更防抖重建（~900ms）。反链见编辑器状态栏；文献引用解析入库后自动生成 `{paper}/source/agentero-cite.json`，与 Markdown 双链索引分层、不共用边语义。详见 [frontend/wiki.md](frontend/wiki.md) / [backend/wiki.md](backend/wiki.md) / [backend/citation-parsing.md](backend/citation-parsing.md)。
+嵌套标题双链：`[[文件#外层标题#内层标题]]`。Wiki 索引 `.md` 变更防抖重建（~900ms）。反链见编辑器状态栏；文献引用解析入库后自动生成 `{paper}/.src/citations.json`，与 Markdown 双链索引分层、不共用边语义。详见 [frontend/wiki.md](frontend/wiki.md) / [backend/wiki.md](backend/wiki.md) / [backend/citation-parsing.md](backend/citation-parsing.md)。
 
 ## 数据流
 
@@ -91,7 +91,7 @@ Plate + `@platejs/markdown`。普通文本粘贴默认按 Markdown 解析。`\$a
 | Catalog | 论文集合 + metadata | `.agentero/catalog.sqlite` |
 | 阅读标注 | 高亮、划词问答、翻译、视觉批注 | `{paper}/marks/` |
 | 版面分析 | 原始 layout regions / 侧栏索引 | `{paper}/source/layout.json` / `layout-index.json` |
-| 引用解析 | 参考文献元数据 | `{paper}/source/agentero-cite.json` |
+| 引用解析 | 参考文献元数据 | `{paper}/.src/citations.json` |
 | 设置 | UI/Agent 偏好 | XDG `~/.config/agentero/settings.json` |
 | 使用记录 | 打开 / 下载 / Agent 等 | XDG `~/.local/share/agentero/usage.sqlite` |
 | 索引 | 双链图（编辑器/反链） | 内存，可重建 |

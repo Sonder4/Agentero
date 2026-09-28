@@ -5,6 +5,7 @@
 
 import { lazy, Suspense, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { WebAiPanel } from "@/components/web-ai/web-ai-panel";
 import {
 	useLibraryStore,
 	useSettings,
@@ -65,7 +66,31 @@ export function RightSidebar() {
 	const agentInWindow = Boolean(featurePoppedOut.agent);
 
 	return (
-		<>
+		<div className="flex h-full min-h-0 flex-col">
+			{rightSidebarOpen && !agentInWindow && (
+				<div className="flex shrink-0 gap-1 border-b px-2 py-1">
+					<button
+						type="button"
+						className={cn(
+							"rounded px-2 py-1 text-xs",
+							rightSidebarTab === "agent" && "bg-muted",
+						)}
+						onClick={() => setRightSidebarTab("agent")}
+					>
+						{t("labels.agent")}
+					</button>
+					<button
+						type="button"
+						className={cn(
+							"rounded px-2 py-1 text-xs",
+							rightSidebarTab === "web-ai" && "bg-muted",
+						)}
+						onClick={() => setRightSidebarTab("web-ai")}
+					>
+						{t("webAi.title")}
+					</button>
+				</div>
+			)}
 			{/* Keep AgentPanel alive when switching rail tabs, but never while
 			    the agent singleton window is open. */}
 			{!agentInWindow &&
@@ -96,6 +121,11 @@ export function RightSidebar() {
 						</Suspense>
 					</div>
 				)}
-		</>
+			{!agentInWindow && rightSidebarOpen && rightSidebarTab === "web-ai" && (
+				<div className="min-h-0 flex-1">
+					<WebAiPanel />
+				</div>
+			)}
+		</div>
 	);
 }

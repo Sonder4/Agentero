@@ -119,7 +119,7 @@ enqueuePaperLayoutAnalysis
   → register DocumentManager / Render / AiManager / LayoutAnalysis
   → openDocumentBuffer({ documentId: "headless-layout-..." })
   → runDocumentLayoutAnalysis(scope, documentId)
-  → write source/layout.json + source/layout-index.json
+  → write source/layout.json + .src/layout-index.json
   → closeDocument(documentId)
   → registry.destroy()
 ```
