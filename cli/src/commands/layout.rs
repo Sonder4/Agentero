@@ -65,9 +65,9 @@ pub enum LayoutCmd {
         /// Source language (default auto).
         #[arg(long = "from", value_name = "LANG", default_value = "auto")]
         from: String,
-        /// Free translation engine (default tencenttransmart).
-        #[arg(long = "provider", value_name = "ID")]
-        provider: Option<String>,
+        /// Pi agent workers translating at once (1–8, default 4).
+        #[arg(long = "jobs", value_name = "N", default_value_t = 4)]
+        jobs: usize,
         /// Ignore an existing translation sidecar.
         #[arg(long = "force")]
         force: bool,
@@ -87,19 +87,9 @@ pub async fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError
             r#ref,
             to,
             from,
-            provider,
+            jobs,
             force,
-        } => {
-            translate(
-                globals,
-                r#ref.as_deref(),
-                &to,
-                &from,
-                provider.as_deref(),
-                force,
-            )
-            .await
-        }
+        } => translate(globals, r#ref.as_deref(), &to, &from, jobs, force).await,
     }
 }
 
@@ -222,7 +212,7 @@ async fn translate(
     paper_ref: Option<&str>,
     target: &str,
     source: &str,
-    provider: Option<&str>,
+    jobs: usize,
     force: bool,
 ) -> Result<Value, CliError> {
     let vault = resolve_vault(globals)?;
@@ -242,7 +232,7 @@ async fn translate(
             &paper.path,
             target,
             source,
-            provider,
+            jobs,
             force,
         )
         .await

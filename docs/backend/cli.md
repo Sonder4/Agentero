@@ -77,18 +77,18 @@ Mark id 是 nanoid，字母表含 `-`，约 1/64 的 id 以 `-` 开头。`mark g
 
 `layout analyze` 用 PDFium 文字层按阅读顺序抽出正文 / 标题 / 图题块，写入桌面同一套 sidecar：`{paper}/source/layout.json` 与 `{paper}/.src/layout-index.json`。已有 sidecar 默认复用，`--force` 才重写。这是文字层重建，不跑桌面 WebView 里的 PP-DocLayoutV3；扫描版页面没有文字层时该页为空。
 
-`layout translate` 先确保版面 sidecar 存在，再把正文、摘要、标题、图题翻译进 `{paper}/.src/layout-translate.json`（与阅读器全文翻译同一 schema）。缓存按 provider / 语言 / 原文命中；`--force` 忽略旧译文。默认引擎是免费的 `tencenttransmart`，不读取桌面 settings 里的商业 Key。
+`layout translate` 先确保版面 sidecar 存在，再调用本机 Pi agent（`pi --mode json`，不覆盖 provider / model，因此使用 Pi 配置里的默认模型）把正文、摘要、标题、图题翻译进 `{paper}/.src/layout-translate.json`。工具、扩展和仓库 AGENTS.md 都不加载。`--jobs` 控制同时运行的 Pi 进程数（1–8，默认 4）。缓存按 `agent:pi:default`、语言和原文命中；`--force` 忽略旧译文。
 
 ```bash
 # 省略论文参数 = Catalog 里的全部论文
 agentero layout analyze --json
 agentero layout analyze papers/demo --force --json
 
-agentero layout translate --to zh-CN --json
-agentero layout translate papers/demo --provider deeplx --json
+agentero layout translate --to zh-CN --jobs 4 --json
+agentero layout translate papers/demo --jobs 2 --json
 ```
 
-大批量任务会按论文顺序请求翻译服务，中途失败的论文会让命令以该篇错误退出，已写完的 sidecar 保留。
+某一篇失败会记入 `errors` 并继续下一篇，已写完的 sidecar 保留。Pi 不在 PATH 上时，用 `AGENTERO_PI` 指向可执行文件。
 
 ### 文字高亮 / 批注 / 翻译（已实现）
 

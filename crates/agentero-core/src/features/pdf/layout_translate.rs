@@ -1,12 +1,12 @@
 //! Full-text translation of layout body regions.
 //!
 //! Reads `{paper}/source/layout.json`, translates text / abstract / header /
-//! caption regions with the free machine-translation engines, and writes
+//! caption regions through the local Pi agent, and writes
 //! `{paper}/.src/layout-translate.json` in the viewer's sidecar schema.
 //! Cached items whose source text still matches are reused.
 
 use crate::error::AppError;
-use crate::features::translate::{self, TranslateTextArgs, FREE_PROVIDERS};
+use crate::features::pdf::pi_agent;
 use crate::fs::json_store;
 use serde_json::{json, Value};
 use std::fs;
@@ -14,6 +14,11 @@ use std::path::Path;
 
 const TRANSLATE_SCHEMA: u64 = 1;
 const BATCH_CHARS: usize = 4500;
+const DEFAULT_CONCURRENCY: usize = 4;
+
+pub fn default_concurrency() -> usize {
+    DEFAULT_CONCURRENCY
+}
 
 #[derive(Debug, Clone)]
 struct Unit {
@@ -35,6 +40,8 @@ pub struct LayoutTranslateOutcome {
     pub failed: usize,
     pub provider: String,
     pub target_lang: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 pub async fn translate_paper_dir(
@@ -42,7 +49,7 @@ pub async fn translate_paper_dir(
     paper_rel: &str,
     target_lang: &str,
     source_lang: &str,
-    provider: Option<&str>,
+    concurrency: usize,
     force: bool,
 ) -> Result<Option<LayoutTranslateOutcome>, AppError> {
     let paper_dir = vault.join(paper_rel);
@@ -50,29 +57,38 @@ pub async fn translate_paper_dir(
     if !raw_path.is_file() {
         return Ok(None);
     }
-    let provider_id = provider.unwrap_or("tencenttransmart").to_string();
-    if !FREE_PROVIDERS.contains(&provider_id.as_str()) {
-        return Err(AppError::message(format!(
-            "layout translation provider must be one of {}",
-            FREE_PROVIDERS.join("|")
-        )));
-    }
+    let provider_id = "agent".to_string();
+    let service_key = "agent:pi:default".to_string();
     let units = load_units(&raw_path)?;
     if units.is_empty() {
+        write_sidecar(
+            &paper_dir,
+            &provider_id,
+            source_lang,
+            target_lang,
+            &service_key,
+            &[],
+        )?;
         return Ok(Some(empty_outcome(
             paper_rel,
-            true,
+            !force,
             &provider_id,
             target_lang,
         )));
     }
 
-    let service_key = provider_id.clone();
     let sidecar_path = paper_dir.join(".src").join("layout-translate.json");
+    let service_key_for_cache = service_key.clone();
     let cached = if force {
         Vec::new()
     } else {
-        load_cache(&sidecar_path, &provider_id, source_lang, target_lang, &service_key)
+        load_cache(
+            &sidecar_path,
+            &provider_id,
+            source_lang,
+            target_lang,
+            &service_key_for_cache,
+        )
     };
     let mut translated = Vec::new();
     let mut pending = Vec::new();
@@ -109,31 +125,54 @@ pub async fn translate_paper_dir(
             failed: 0,
             provider: provider_id,
             target_lang: target_lang.to_string(),
+            error: None,
         }));
     }
 
     let mut failed = 0usize;
-    for batch in batches(&pending) {
-        match translate_batch(&batch, &provider_id, source_lang, target_lang).await {
+    let mut first_error: Option<String> = None;
+    let workers = concurrency.clamp(1, 8);
+    let groups = batches(&pending);
+    let first_pass = translate_batches(&groups, workers, source_lang, target_lang, vault).await;
+    let mut retry_units = Vec::new();
+    for (batch, result) in groups.iter().zip(first_pass) {
+        match result {
             Ok(texts) => {
                 for (unit, text) in batch.iter().zip(texts) {
                     let text = text.trim();
                     if text.is_empty() {
-                        failed += 1;
+                        retry_units.push(unit.clone());
                     } else {
                         translated.push(item_json(unit, text));
                     }
                 }
             }
-            Err(_) => {
-                for unit in &batch {
-                    match translate_one(&unit.source, &provider_id, source_lang, target_lang).await
-                    {
-                        Ok(text) if !text.trim().is_empty() => {
-                            translated.push(item_json(unit, text.trim()))
-                        }
-                        _ => failed += 1,
+            Err(err) => {
+                if first_error.is_none() {
+                    first_error = Some(err.to_string());
+                }
+                if is_retryable_translation_error(&err) {
+                    retry_units.extend(batch.iter().cloned());
+                } else {
+                    failed += batch.len();
+                }
+            }
+        }
+    }
+    if !retry_units.is_empty() {
+        let singles: Vec<Vec<Unit>> = retry_units.iter().cloned().map(|unit| vec![unit]).collect();
+        let retried = translate_batches(&singles, workers, source_lang, target_lang, vault).await;
+        for (unit, result) in retry_units.iter().zip(retried) {
+            match result {
+                Ok(texts) => match texts.first().map(|text| text.trim()).filter(|text| !text.is_empty()) {
+                    Some(text) => translated.push(item_json(unit, text)),
+                    None => failed += 1,
+                },
+                Err(err) => {
+                    if first_error.is_none() {
+                        first_error = Some(err.to_string());
                     }
+                    failed += 1;
                 }
             }
         }
@@ -158,6 +197,7 @@ pub async fn translate_paper_dir(
         failed,
         provider: provider_id,
         target_lang: target_lang.to_string(),
+        error: first_error,
     }))
 }
 
@@ -175,6 +215,7 @@ fn empty_outcome(
         failed: 0,
         provider: provider.to_string(),
         target_lang: target.to_string(),
+        error: None,
     }
 }
 
@@ -267,23 +308,74 @@ fn batches(units: &[Unit]) -> Vec<Vec<Unit>> {
     out
 }
 
-async fn translate_batch(
-    batch: &[Unit],
-    provider: &str,
+async fn translate_batches(
+    groups: &[Vec<Unit>],
+    workers: usize,
     source_lang: &str,
     target_lang: &str,
+    cwd: &Path,
+) -> Vec<Result<Vec<String>, AppError>> {
+    use futures_util::stream::{self, StreamExt};
+
+    let source_lang = source_lang.to_string();
+    let target_lang = target_lang.to_string();
+    let cwd = cwd.to_path_buf();
+    let mut results = stream::iter(groups.iter().cloned().enumerate())
+        .map(|(index, batch)| {
+            let source_lang = source_lang.clone();
+            let target_lang = target_lang.clone();
+            let cwd = cwd.clone();
+            async move {
+                (
+                    index,
+                    translate_batch(&batch, &source_lang, &target_lang, &cwd).await,
+                )
+            }
+        })
+        .buffer_unordered(workers)
+        .collect::<Vec<_>>()
+        .await;
+    results.sort_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
+async fn translate_batch(
+    batch: &[Unit],
+    source_lang: &str,
+    target_lang: &str,
+    cwd: &Path,
 ) -> Result<Vec<String>, AppError> {
+    let prompt = translation_prompt(batch, source_lang, target_lang);
+    let translated = pi_agent::translate_with_pi(&prompt, cwd).await?;
     if batch.len() == 1 {
-        return Ok(vec![
-            translate_one(&batch[0].source, provider, source_lang, target_lang).await?,
-        ]);
+        return Ok(vec![translated]);
     }
-    let mut payload = String::new();
+    split_numbered(&translated, batch.len())
+}
+
+fn translation_prompt(batch: &[Unit], source_lang: &str, target_lang: &str) -> String {
+    let mut prompt = format!(
+        "You are a professional academic translator. Translate the text below from {source_lang} into {target_lang}.\n\
+Rules:\n\
+- Write natural {target_lang}. Keep mathematics, symbols, variable names, units, code, URLs and citation markers unchanged.\n\
+- Do not add, drop, summarize or explain anything. Output only the translation.\n"
+    );
+    if batch.len() == 1 {
+        prompt.push_str("\n");
+        prompt.push_str(&batch[0].source);
+        return prompt;
+    }
+    prompt.push_str(
+        "- The text has several paragraphs prefixed with [[n]]. Keep the same markers, in order, and do not merge paragraphs.\n\n",
+    );
     for (index, unit) in batch.iter().enumerate() {
-        payload.push_str(&format!("[[{index}]] {}\n", unit.source));
+        prompt.push_str(&format!("[[{index}]] {}\n\n", unit.source));
     }
-    let translated = translate_one(&payload, provider, source_lang, target_lang).await?;
-    let mut parts = vec![String::new(); batch.len()];
+    prompt
+}
+
+fn split_numbered(translated: &str, expected: usize) -> Result<Vec<String>, AppError> {
+    let mut parts = vec![String::new(); expected];
     let mut current: Option<usize> = None;
     for line in translated.lines() {
         if let Some(rest) = line.trim().strip_prefix("[[") {
@@ -291,10 +383,7 @@ async fn translate_batch(
                 if let Ok(index) = n.trim().parse::<usize>() {
                     if index < parts.len() {
                         current = Some(index);
-                        let text = after.trim();
-                        if !text.is_empty() {
-                            push_part(&mut parts[index], text);
-                        }
+                        push_part(&mut parts[index], after.trim());
                         continue;
                     }
                 }
@@ -305,9 +394,16 @@ async fn translate_batch(
         }
     }
     if parts.iter().any(|part| part.trim().is_empty()) {
-        return Err(AppError::message("batch translation markers were incomplete"));
+        return Err(AppError::message(
+            "pi batch translation markers were incomplete",
+        ));
     }
     Ok(parts)
+}
+
+fn is_retryable_translation_error(error: &AppError) -> bool {
+    let message = error.to_string();
+    !message.starts_with("pi translation error:") && !message.starts_with("pi exited ")
 }
 
 fn push_part(slot: &mut String, text: &str) {
@@ -318,40 +414,6 @@ fn push_part(slot: &mut String, text: &str) {
         slot.push(' ');
     }
     slot.push_str(text);
-}
-
-async fn translate_one(
-    text: &str,
-    provider: &str,
-    source_lang: &str,
-    target_lang: &str,
-) -> Result<String, AppError> {
-    let mut start = 0usize;
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::new();
-    while start < chars.len() {
-        let end = (start + translate::MAX_TEXT_CHARS).min(chars.len());
-        let slice: String = chars[start..end].iter().collect();
-        let result = translate::translate_text(TranslateTextArgs {
-            text: slice,
-            source_lang: source_lang.to_string(),
-            target_lang: target_lang.to_string(),
-            provider: provider.to_string(),
-            api_key: None,
-            base_url: None,
-            region: None,
-            model: None,
-            custom_prompt: None,
-            timeout_ms: Some(30_000),
-        })
-        .await?;
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(result.text.trim());
-        start = end;
-    }
-    Ok(out)
 }
 
 fn item_json(unit: &Unit, translated: &str) -> Value {
