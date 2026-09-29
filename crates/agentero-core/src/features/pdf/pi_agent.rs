@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -49,20 +49,51 @@ pub async fn translate_with_pi(prompt: &str, cwd: &Path) -> Result<String, AppEr
             .await
             .map_err(|e| AppError::message(format!("write pi prompt: {e}")))?;
     }
-    let output = timeout(PI_TIMEOUT, child.wait_with_output())
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AppError::message("pi stdout was not piped"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| AppError::message("pi stderr was not piped"))?;
+    let stdout_task = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).await.map(|_| bytes)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).await.map(|_| bytes)
+    });
+    let status = match timeout(PI_TIMEOUT, child.wait()).await {
+        Ok(result) => result.map_err(|e| AppError::message(format!("pi translation failed: {e}")))?,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            stdout_task.abort();
+            stderr_task.abort();
+            return Err(AppError::message(
+                "pi translation timed out after 180s; process terminated",
+            ));
+        }
+    };
+    let stdout = stdout_task
         .await
-        .map_err(|_| AppError::message("pi translation timed out after 180s"))?
-        .map_err(|e| AppError::message(format!("pi translation failed: {e}")))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        .map_err(|e| AppError::message(format!("read pi stdout task: {e}")))?
+        .map_err(|e| AppError::message(format!("read pi stdout: {e}")))?;
+    let stderr = stderr_task
+        .await
+        .map_err(|e| AppError::message(format!("read pi stderr task: {e}")))?
+        .map_err(|e| AppError::message(format!("read pi stderr: {e}")))?;
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&stderr);
         let tail = stderr.chars().rev().take(400).collect::<String>();
         let tail = tail.chars().rev().collect::<String>();
         return Err(AppError::message(format!(
-            "pi exited {}: {tail}",
-            output.status
+            "pi exited {status}: {tail}"
         )));
     }
-    parse_pi_text(&output.stdout)
+    parse_pi_text(&stdout)
 }
 
 fn pi_program() -> String {
