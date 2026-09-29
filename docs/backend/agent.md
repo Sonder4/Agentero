@@ -210,7 +210,7 @@ cursor 不再推进（`next == prev`）时视为走完，避免死循环。
 | Command | 说明 |
 |---|---|
 | `agent_probe` / `agent_warm` | 探测与预热 |
-| `agent_run_once` | 发起一轮；`sessionId` 时按能力 resume 或 load；可选 `images[]`（base64 + mime）→ ACP `ContentBlock::Image` |
+| `agent_run_once` | 发起一轮；`sessionId` 时按能力 resume 或 load；可选 `images[]`（base64 + mime）→ ACP `ContentBlock::Image`。调用方是当前 `Webview`，事件按同一个 webview label 定向；主窗口挂着网页 AI 子 WebView 时仍可调用 |
 | `agent_list_sessions` / `agent_load_session` | 会话历史 |
 | `agent_list_skills` | Vault skill 列表 |
 | `agent_respond_permission` | 回答权限请求 |

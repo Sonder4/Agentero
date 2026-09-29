@@ -17,6 +17,8 @@ Agentero 的 Web AI 集成位于 `features/web_ai`，与普通论文网页代理
 
 PDF 选区菜单把当前选中文本和当前论文 PDF 一起交给已打开的 ChatGPT 或 Gemini；都没打开时默认 ChatGPT。它不自动绑定论文，也不自动发送。
 
+网页 AI 是主窗口的子 WebView。Agent 命令因此不能声明 `WebviewWindow` 参数，事件也不能按窗口定向；否则打开网页 AI 后，布局翻译术语表和其他 Agent 调用会返回 `current webview is not a WebviewWindow`。见 [../bug_fix/web-ai-webview-agent-commands.md](../bug_fix/web-ai-webview-agent-commands.md)。
+
 `web_ai_copy_to_notes` 只在调用方已经确认目标论文后，把回答追加到 `{paper}/NOTES.md`，并保留已有 frontmatter。
 
 ## 尚未验收
