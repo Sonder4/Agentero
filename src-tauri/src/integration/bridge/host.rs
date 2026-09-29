@@ -936,13 +936,14 @@ async fn dispatch_agent_rpc(
             let mut request: RunOnceRequest = serde_json::from_value(params)?;
             request.vault_path = vault_path;
             request.hide_from_chat_history = false;
-            let window = app
-                .get_webview_window("main")
-                .or_else(|| app.webview_windows().into_values().next())
-                .ok_or_else(|| AppError::message("No desktop window is available for Agent"))?;
+            let webview = app
+                .get_webview("main")
+                .or_else(|| app.webviews().into_values().next())
+                .ok_or_else(|| AppError::message("No desktop webview is available for Agent"))?;
             let remote_hosts = app.state::<std::sync::Arc<dyn RemoteAgentHosts>>();
             let result = agent_service::accept_run_once(
-                &window,
+                app,
+                webview.label(),
                 app.state::<AgentRegistry>().inner(),
                 app.state::<AgentRunController>().inner(),
                 app.state::<PermissionGate>().inner(),

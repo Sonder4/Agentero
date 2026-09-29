@@ -9,8 +9,9 @@ use crate::features::agent::acp::interaction::PermissionPolicy;
 use crate::features::agent::acp::terminal::AcpTerminalManager;
 use crate::features::agent::acp::updates::{
     collaboration_from_config_options, effort_from_config_options, emit_rich_session_update,
-    emit_session_config_options, fast_mode_value_to_set, is_fast_option, is_pi_startup_banner,
-    models_from_config_options, stream_from_update,
+    emit_session_config_options, fast_mode_value_to_set, is_fast_option,
+    models_from_config_options, pi_banner_prefix_possible, pi_startup_banner_end,
+    stream_from_update,
 };
 use crate::features::agent::models::{
     AgentDescriptor, AgentFailedEvent, AgentResultPayload, AgentStatusEvent, AgentStreamEvent,
@@ -219,6 +220,8 @@ pub(crate) struct RunOnceContext {
     agent_id: String,
     /// pi-acp forwards a CLI startup banner that must be dropped from the stream.
     is_pi: bool,
+    /// Prefix held back while it may still grow into Pi's startup banner.
+    pi_banner_buf: Arc<Mutex<String>>,
     content_buf: Arc<Mutex<String>>,
     thought_buf: Arc<Mutex<String>>,
     coalescer: StreamCoalescer,
@@ -255,6 +258,7 @@ impl RunOnceContext {
             message_id: params.message_id.clone(),
             agent_id: params.desc.id.clone(),
             is_pi: matches!(params.desc.template, AgentTemplate::Pi),
+            pi_banner_buf: Arc::new(Mutex::new(String::new())),
             content_buf: Arc::new(Mutex::new(String::new())),
             thought_buf: Arc::new(Mutex::new(String::new())),
             coalescer,
@@ -299,34 +303,74 @@ impl RunOnceContext {
             return;
         }
         if let Some((chunk, kind)) = stream_from_update(&notification.update) {
-            let drop_banner = self.is_pi
-                && matches!(kind, AgentStreamKind::Message)
-                && is_pi_startup_banner(&chunk)
-                && self
-                    .content_buf
-                    .lock()
-                    .is_ok_and(|buffer| buffer.is_empty());
-            if !drop_banner {
-                match kind {
-                    AgentStreamKind::Message => {
-                        if let Ok(mut buf) = self.content_buf.lock() {
-                            buf.push_str(&chunk);
-                        }
-                    }
-                    AgentStreamKind::Thought => {
-                        if let Ok(mut buf) = self.thought_buf.lock() {
-                            buf.push_str(&chunk);
-                        }
+            if self.absorb_pi_banner(&chunk, kind) {
+                return;
+            }
+            match kind {
+                AgentStreamKind::Message => {
+                    if let Ok(mut buf) = self.content_buf.lock() {
+                        buf.push_str(&chunk);
                     }
                 }
-                self.coalescer.push(&chunk, kind);
+                AgentStreamKind::Thought => {
+                    if let Ok(mut buf) = self.thought_buf.lock() {
+                        buf.push_str(&chunk);
+                    }
+                }
             }
+            self.coalescer.push(&chunk, kind);
         } else {
             // Non-chunk update (tool/plan/…): flush buffered text first
             // so the transcript order stays text → tool/plan.
             self.coalescer.flush();
         }
         emit_rich_session_update(&self.app, &self.session_id, &self.agent_id, notification);
+    }
+
+    /// Hold Pi's startup inventory until it can be dropped as a whole.
+    ///
+    /// `pi-acp` may split `pi v…`, `## Context`, and `## Skills` across chunks,
+    /// or append the translation to the same chunk. A chunk-level exact match
+    /// therefore leaks the inventory into the answer.
+    fn absorb_pi_banner(&self, chunk: &str, kind: AgentStreamKind) -> bool {
+        if !self.is_pi || !matches!(kind, AgentStreamKind::Message) {
+            return false;
+        }
+        let Ok(mut held) = self.pi_banner_buf.lock() else {
+            return false;
+        };
+        if held.is_empty()
+            && self
+                .content_buf
+                .lock()
+                .is_ok_and(|buffer| !buffer.is_empty())
+        {
+            return false;
+        }
+        held.push_str(chunk);
+        if let Some(end) = pi_startup_banner_end(&held) {
+            let rest = held[end..].to_string();
+            held.clear();
+            drop(held);
+            if !rest.is_empty() {
+                self.accept_message_chunk(&rest);
+            }
+            return true;
+        }
+        // A banner is a short inventory. Past this, the buffer is the answer.
+        if held.chars().count() > 12_000 || !pi_banner_prefix_possible(&held) {
+            let rest = std::mem::take(&mut *held);
+            drop(held);
+            self.accept_message_chunk(&rest);
+        }
+        true
+    }
+
+    fn accept_message_chunk(&self, chunk: &str) {
+        if let Ok(mut buf) = self.content_buf.lock() {
+            buf.push_str(chunk);
+        }
+        self.coalescer.push(chunk, AgentStreamKind::Message);
     }
 
     /// Flush buffered stream text, then emit `agent:completed` (ordered after text).

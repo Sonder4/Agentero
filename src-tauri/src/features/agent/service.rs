@@ -165,7 +165,8 @@ pub fn respond_ask_user(
 /// streaming turn in the background and return the accepted ids.
 #[allow(clippy::too_many_arguments)]
 pub async fn accept_run_once(
-    window: &tauri::WebviewWindow,
+    app: &AppHandle,
+    webview_label: &str,
     registry: &AgentRegistry,
     runs: &AgentRunController,
     gate: &PermissionGate,
@@ -222,8 +223,8 @@ pub async fn accept_run_once(
         }
     };
 
-    let app_handle = window.app_handle().clone();
-    let events = AgentEventEmitter::new(app_handle.clone(), window.label());
+    let app_handle = app.clone();
+    let events = AgentEventEmitter::new(app_handle.clone(), webview_label);
     // `starting` lands before the accepted ids return, so the webview can paint
     // a loading state for the placeholder line at t=0 (before any stream event).
     let _ = events.emit(
@@ -235,9 +236,8 @@ pub async fn accept_run_once(
     let ask_user_gate = ask_user_gate.clone();
     // Pooled warm connections live in managed state so run_once can skip the
     // spawn → initialize → session/new cold chain when a healthy slot matches.
-    let warm_pool = Arc::clone(window.app_handle().state::<Arc<AgentWarmPool>>().inner());
-    let translation_limiter = window
-        .app_handle()
+    let warm_pool = Arc::clone(app.state::<Arc<AgentWarmPool>>().inner());
+    let translation_limiter = app
         .state::<Arc<PdfLayoutTranslationLimiter>>()
         .inner()
         .clone();

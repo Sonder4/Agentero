@@ -20,7 +20,11 @@ use tauri::{Manager, State};
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub async fn agent_run_once(
-    window: tauri::WebviewWindow,
+    // `Webview`, not `WebviewWindow`: the latter's command injection rejects
+    // any window that hosts a child webview (`current webview is not a
+    // WebviewWindow`), which the Web AI panel does. The label is only an
+    // event target.
+    webview: tauri::Webview,
     registry: State<'_, AgentRegistry>,
     runs: State<'_, AgentRunController>,
     gate: State<'_, PermissionGate>,
@@ -30,7 +34,8 @@ pub async fn agent_run_once(
     request: RunOnceRequest,
 ) -> Result<ApiResult<RunOnceAccepted>, String> {
     match service::accept_run_once(
-        &window,
+        webview.window().app_handle(),
+        webview.label(),
         registry.inner(),
         runs.inner(),
         gate.inner(),
@@ -113,7 +118,7 @@ pub fn agent_cancel_run(
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_warm(
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     registry: State<'_, AgentRegistry>,
     remote_registry: State<'_, Arc<dyn RemoteAgentHosts>>,
     warm_gate: State<'_, AgentWarmGate>,
@@ -162,7 +167,7 @@ pub async fn agent_warm(
         }
     };
 
-    let events = AgentEventEmitter::new(window.app_handle().clone(), window.label());
+    let events = AgentEventEmitter::new(webview.window().app_handle().clone(), webview.label());
     let agent_id = desc.id.clone();
     let result = warm_agent(
         events,

@@ -113,7 +113,7 @@
 
 ## F · Agent 运行上下文
 
-**问题与证据：** `features/agent/service.rs:140` 要求 WebviewWindow；Bridge `integration/bridge/host.rs:41,79,938` 寻找桌面窗口并监听手写事件列表。远端主进程可以经 SSH 启动，但 `agent/acp/terminal.rs:124` 仍创建本机进程。关联 V15–V19、V21、V22、V40。
+**问题与证据：** `accept_run_once` 已改为 `(app, webview_label)`，不再把调用方收成 `WebviewWindow`（子 WebView 存在时该类型注入会失败）。Bridge 仍寻找桌面 webview 并监听手写事件列表。远端主进程可以经 SSH 启动，但 `agent/acp/terminal.rs:124` 仍创建本机进程。关联 V15–V19、V21、V22、V40。
 
 建议职责：`AgentRunContext { execution_target, event_sink, interaction_policy, cancellation }`，避免聚合成所有 managed state 的万能上下文。
 
@@ -206,7 +206,7 @@
 | V14 | gate 超时泄漏：三个 gate 的 pending map 只在 `resolve()` 删除，300s 超时路径不清理（晚到回答优雅返回 `resolved:false`，不崩） | `runtime/gates.rs:24,71,115`、`acp/interaction.rs:345,388,448` |
 | V15 | bridge 事件缺口：`agent:ask-user-request` / `agent:elicitation-request` **不在**转发列表，但回答端 RPC 存在 → 移动端这两个 RPC 是死代码，300s 自动取消。`agent:permission-request` 已转发（无缺口） | `bridge/host.rs:41-49`（转发表）、`host.rs:964-985`（回答端） |
 | V16 | 远端 agent 终端本机执行：SSH run 的 `terminal/create` 无条件走本机 `tokio::process::Command`，无远端 executor | `session/run.rs:244,356`、`acp/terminal.rs:124` |
-| V17 | runtime 绑死 WebviewWindow：`accept_run_once` 首参 `&WebviewWindow` 仅用作事件目标；bridge 被迫狩猎窗口 + `listen_any` 窃听 | `agent/service.rs:140,198`、`bridge/host.rs:938-941,79-104` |
+| V17 | runtime 事件目标已从 `WebviewWindow` 改为 webview label（`accept_run_once(app, webview_label)`）；bridge 仍狩猎 webview + `listen_any` 窃听 | `agent/service.rs` `accept_run_once`、`bridge/host.rs` `agent_run_once`、`bridge/host.rs:79-104` |
 | V18 | Agent 命令绕过 service：`agent_warm` 内联整套编排；`agent_probe` 近乎逐字复制 `service::probe_catalog`；lifecycle 无 service 包装 | `commands/session.rs:122-183`、`commands/registry.rs:156-178` |
 | V19 | 连接装配重复 **5 处**（非 4）：probe/warm/run/history×2，builder+terminal handler+deny-permission+connect_with 样板复制，无共享装配助手 | `acp/probe.rs:37`、`session/warm.rs:78`、`session/run.rs:353`、`session/history.rs:70,411` |
 | V20 | PATH 无缓存全量重扫：每次 `agent_run_once` 对**每个**注册 agent 跑 `probe_command`（遍历 nvm/brew/scoop），阻塞 tokio 线程；`upsert`/`discover` 还持锁扫描 | `registry/store.rs:160,341`、`core/process/discover.rs`（零 memoization） |

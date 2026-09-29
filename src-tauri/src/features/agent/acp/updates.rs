@@ -37,18 +37,178 @@ pub(crate) fn text_from_content_block(
 /// `pi-acp` forwards pi's CLI startup banner (`pi v0.84.1` followed by a
 /// Context / Skills / Extensions inventory) as a plain agent message right after
 /// `session/new`, so it would otherwise render ahead of the actual answer.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_pi_startup_banner(text: &str) -> bool {
-    let mut lines = text.trim_start().lines();
-    let Some(version) = lines.next().and_then(|l| l.trim().strip_prefix("pi v")) else {
+    pi_startup_banner_end(text).is_some_and(|end| text[end..].trim().is_empty())
+}
+
+/// End of a leading Pi startup inventory, in bytes.
+///
+/// The banner is the version line plus only `## Context`, `## Skills`, and
+/// `## Extensions` sections. Translation text appended after that inventory is
+/// preserved. A version-less inventory is accepted only when `## Context`
+/// contains `AGENTS.md` and `## Skills` lists `SKILL.md`, which is the shape
+/// Pi emits and not a translated document heading.
+pub(crate) fn pi_startup_banner_end(text: &str) -> Option<usize> {
+    let start = text.find(|c: char| !c.is_whitespace())?;
+    let body = &text[start..];
+    let mut lines = body.lines();
+    let first_raw = lines.next()?;
+    let first = first_raw.trim();
+    let versioned = pi_version_heading(first);
+    if !versioned && !pi_inventory_heading(first) {
+        return None;
+    }
+
+    let mut saw_context = inventory_kind(first) == Some(PiInventory::Context);
+    let mut saw_skills = inventory_kind(first) == Some(PiInventory::Skills);
+    let mut saw_agents = false;
+    let mut saw_skill_file = false;
+    let mut offset = start + first_raw.len();
+    offset += newline_len(&text[offset..]);
+
+    for line in text[offset..].lines() {
+        let trimmed = line.trim();
+        if pi_inventory_entry(trimmed) {
+            match inventory_kind(trimmed) {
+                Some(PiInventory::Context) => saw_context = true,
+                Some(PiInventory::Skills) => saw_skills = true,
+                _ => {}
+            }
+            if trimmed.contains("AGENTS.md") {
+                saw_agents = true;
+            }
+            if trimmed.contains("SKILL.md") {
+                saw_skill_file = true;
+            }
+            offset += line.len();
+            offset += newline_len(&text[offset..]);
+            continue;
+        }
+        return valid_pi_inventory(
+            versioned,
+            saw_context,
+            saw_skills,
+            saw_agents,
+            saw_skill_file,
+        )
+        .then_some(offset);
+    }
+    valid_pi_inventory(
+        versioned,
+        saw_context,
+        saw_skills,
+        saw_agents,
+        saw_skill_file,
+    )
+    .then_some(text.len())
+}
+
+fn newline_len(text: &str) -> usize {
+    if text.starts_with("\r\n") {
+        2
+    } else if text.starts_with('\n') {
+        1
+    } else {
+        0
+    }
+}
+
+fn valid_pi_inventory(
+    versioned: bool,
+    saw_context: bool,
+    saw_skills: bool,
+    saw_agents: bool,
+    saw_skill_file: bool,
+) -> bool {
+    versioned || (saw_context && saw_skills && saw_agents && saw_skill_file)
+}
+
+#[derive(PartialEq, Eq)]
+enum PiInventory {
+    Context,
+    Skills,
+    Extensions,
+}
+
+fn inventory_kind(line: &str) -> Option<PiInventory> {
+    let heading = line.trim().trim_start_matches('#').trim();
+    if heading.eq_ignore_ascii_case("Context") {
+        Some(PiInventory::Context)
+    } else if heading.eq_ignore_ascii_case("Skills") {
+        Some(PiInventory::Skills)
+    } else if heading.eq_ignore_ascii_case("Extensions") {
+        Some(PiInventory::Extensions)
+    } else {
+        None
+    }
+}
+
+fn pi_version_heading(line: &str) -> bool {
+    let Some(version) = line.trim().strip_prefix("pi v") else {
         return false;
     };
-    if !version.starts_with(|c: char| c.is_ascii_digit()) {
+    let mut parts = version.split('.');
+    let Some(major) = parts.next() else {
+        return false;
+    };
+    if major.is_empty() || !major.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    parts.next().is_some_and(|part| {
+        !part.is_empty()
+            && version
+                .split('.')
+                .skip(1)
+                .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+    })
+}
+
+fn pi_inventory_entry(line: &str) -> bool {
+    let line = line.trim();
+    line.is_empty()
+        || line == "---"
+        || line.starts_with("- ")
+        || pi_inventory_heading(line)
+        || line.contains("AGENTS.md")
+        || line.contains("SKILL.md")
+        || (line.contains(['\\', '/']) && !line.contains(char::is_whitespace))
+}
+
+fn pi_inventory_heading(line: &str) -> bool {
+    inventory_kind(line).is_some()
+}
+
+/// True while the buffered prefix can still grow into a Pi startup banner.
+pub(crate) fn pi_banner_prefix_possible(text: &str) -> bool {
+    let body = text.trim_start();
+    if body.is_empty() {
+        return true;
+    }
+    let mut lines = body.lines().peekable();
+    let Some(first) = lines.next() else {
+        return true;
+    };
+    let first = first.trim();
+    if lines.peek().is_none() {
+        return pi_version_heading(first)
+            || "pi v".starts_with(first)
+            || first.starts_with("pi v")
+            || inventory_prefix(first);
+    }
+    if !(pi_version_heading(first) || pi_inventory_heading(first)) {
         return false;
     }
     lines
         .map(str::trim)
-        .find(|line| !line.is_empty())
-        .is_some_and(|line| line == "---" || line.starts_with("## "))
+        .all(|line| pi_inventory_entry(line) || inventory_prefix(line))
+}
+
+fn inventory_prefix(line: &str) -> bool {
+    let heading = line.trim_start_matches('#').trim();
+    ["Context", "Skills", "Extensions"]
+        .iter()
+        .any(|name| name.starts_with(heading))
 }
 
 pub(crate) fn tool_status_str(s: ToolCallStatus) -> &'static str {

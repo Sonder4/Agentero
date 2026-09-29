@@ -16,8 +16,11 @@ impl AgentEventEmitter {
     }
 
     pub fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) -> tauri::Result<()> {
+        // Target the calling webview, not its WebviewWindow. A child webview
+        // (Web AI) makes the host window fail `is_webview_window`, and the
+        // frontend listens with `getCurrentWebview()` (`kind: "Webview"`).
         self.app.emit_to(
-            EventTarget::webview_window(self.window_label.clone()),
+            EventTarget::webview(self.window_label.clone()),
             event,
             payload,
         )
