@@ -677,13 +677,43 @@ fn cdp_call(
         webview.CallDevToolsProtocolMethod(&method, &parameters, &handler)
     };
     started.map_err(|e| e.to_string())?;
-    let body = receiver
-        .recv_timeout(std::time::Duration::from_secs(8))
-        .map_err(|_| "provider page did not answer".to_string())??;
+    // The completion callback is posted to this same UI thread. Waiting here
+    // would block that callback, so pump messages until it arrives.
+    let body = recv_while_pumping(receiver, std::time::Duration::from_secs(8))?;
     if body.trim().is_empty() {
         return Ok(serde_json::Value::Null);
     }
     serde_json::from_str(&body).map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+fn recv_while_pumping(
+    receiver: std::sync::mpsc::Receiver<Result<String, String>>,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+    };
+
+    let deadline = std::time::Instant::now() + timeout;
+    let mut message = MSG::default();
+    loop {
+        if let Ok(result) = receiver.try_recv() {
+            return result;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("provider page did not answer".into());
+        }
+        let pending = unsafe { PeekMessageW(&mut message, None, 0, 0, PM_REMOVE) };
+        if pending.as_bool() {
+            unsafe {
+                let _ = TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 }
 
 fn host_window(app: &AppHandle) -> Option<Window<Wry>> {

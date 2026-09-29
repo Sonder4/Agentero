@@ -148,6 +148,7 @@ dependencies = [
  "walkdir",
  "webview2-com",
  "which",
+ "windows",
  "windows-core 0.61.2",
  "winreg",
  "zip 2.4.2",
