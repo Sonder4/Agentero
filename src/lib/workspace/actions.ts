@@ -942,11 +942,9 @@ export function setNotesSplit(
 	if (!target?.notesPath) return;
 	const notesId = tabIdForPath(target.notesPath);
 	const isOpen = tabHasNotesSplit(getTabs(), target);
-	if (isOpen === open) {
-		if (open) dockHandle()?.equalizeGridGroups();
-		return;
-	}
+	if (isOpen === open) return;
 	if (!open) {
+		dockHandle()?.rememberNotesSplitWidth(target.id, notesId);
 		closeTab(notesId, { remember: false });
 		return;
 	}
@@ -964,7 +962,9 @@ export function setNotesSplit(
 		return [...prev, notesPane];
 	});
 	dockHandle()?.openPanel(notesPane, notesPlacement);
-	dockHandle()?.equalizeGridGroups();
+	if (notesPlacement?.direction === "right") {
+		dockHandle()?.restoreNotesSplitWidth(target.id, notesPane.id);
+	}
 	setActiveTabId(notesPane.id);
 }
 

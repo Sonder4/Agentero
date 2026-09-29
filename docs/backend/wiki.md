@@ -21,7 +21,7 @@
 - 反链 / 出链查询
 - `graph_get_graph` 等（双链 nodes / edges / center / depth，供索引/调试）— 见 [api.md](api.md)
 - 嵌入目标解析（供前端 `![[...]]`）
-- 链接感知重命名/移动；标题重命名事务
+- 链接感知重命名/移动；标题重命名事务。同 Vault 的 `paper_move` / CLI `paper move` / 本地 Connector 共用 core `catalog/move_paper.rs`，统一调用既有 `run_local_rename_transaction`：先重建/校验索引，保护 dirty paths，再执行移动、改链与 Catalog 提交；失败沿用补偿机制。CLI 使用新索引，不依赖 UI 重建来修复链接。
 - 索引：`.md` 变更防抖重建（前端调度 + Host 重建）
 - 只读语义检查：`WikiIndex::check_links` 按全库、Markdown 文件或目录返回状态计数与问题 occurrence；CLI 暴露为 `agentero doctor wiki [<source>] --json`
 

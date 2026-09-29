@@ -18,6 +18,28 @@
 
 `/bump` 和 `/commit` 默认只修改工作区或创建本地 commit，不会自动创建 tag、push 或发布 Release。
 
+### AtomGit Release 同步（#635）
+
+`.github/workflows/release.yml` 在 installers、Android、CLI 三组 job 全部成功后调用 `sync-atomgit-release.yml`，将该 tag 的 GitHub Release 标题、说明及全部已上传附件同步到 AtomGit。Android 未配置签名而主动跳过产物时，只同步实际存在的附件。任一构建 job 失败则不自动同步。
+
+配置 GitHub repository secret **`ATOMGIT_TOKEN`**：使用对目标 AtomGit 仓库有 Release / 附件读写权限的个人访问令牌。可选 repository variable **`ATOMGIT_REPOSITORY`**，默认 `poco-ai/Agentero`。令牌只通过请求头传递，不写入附件、下载清单或日志。缺少令牌时同步 job 明确失败，已完成的 GitHub 构建和附件仍保留。
+
+同步在 Release 仍为 Draft 时执行：`GITHUB_TOKEN` 需要 `contents: write`（草稿仅对具备 push 权限的令牌出现在 releases 列表中），脚本通过列表接口按 tag 解析 Release，而不是只返回已发布版本的 `releases/tags/<tag>` 接口。
+
+目标仓库需先通过代码镜像同步对应提交。脚本创建 Release 时使用 GitHub tag 的准确 commit SHA，并检查 AtomGit 同名 tag 的 SHA；不自动推送代码、不移动已有 tag。目标提交不存在或 tag 不一致时，先修复仓库镜像，再重跑同步。
+
+- 构建完成时 GitHub 仍为 Draft，AtomGit 同步为 `pre`（**预发布可公开访问，不是私有草稿**）。
+- GitHub Release `published` / `edited` 事件会再次同步当前说明和附件；仅当来源是 GitHub 当前最新稳定版且所有附件校验通过，才标记 AtomGit `latest`。手动补传旧稳定版不会抢占最新版本；新建的历史版本保留 `pre`。
+- `scripts/sync-atomgit-release.mjs` 逐文件下载、上传并回读校验大小和 SHA-256，包括安装包、APK、CLI、`.sig`、`.sha256`、`latest.json`；GitHub 自动生成的 Source code 归档不是上传附件，不在此列表中。
+- 重跑时相同内容跳过；同名不同内容的附件按 ID 删除后重新上传。发生中断可再次运行，不删除目标仓库其他附件。网络错误有限重试，任何附件失败会令 job 失败；只有全部成功才更新最终说明和状态。跨 tag 的同步串行执行。
+- `latest.json` **原样镜像**，其中 URL 仍指向 GitHub。后续待办：landing 双源下载、应用 updater AtomGit 优先及下载失败回退、AtomGit 专用更新清单／稳定入口。本次不切换客户端更新源。
+
+补传／重试：GitHub Actions → **Sync release to AtomGit** → **Run workflow** → 填入已有、附件构建完成的 tag（如 `v0.11.3`）。无需重新编译。工作流须先进入默认分支；通过 `GITHUB_TOKEN` 触发的 Release 修改不会派生新的工作流，自动化改说明后需显式调用 reusable workflow 或手动补同步。
+
+本地验证（不访问发布服务）：`node --test scripts/sync-atomgit-release.test.mjs`。CI 的 quality 任务也运行这些测试。首次部署后需用真实令牌验收上传、回读下载、重跑和正式发布状态切换。
+
+接口依据：[认证](https://docs.atomgit.com/docs/apis/)、[创建 Release](https://docs.atomgit.com/docs/apis/post-api-v-5-repos-owner-repo-releases)、[上传地址](https://docs.atomgit.com/docs/apis/get-api-v-5-repos-owner-repo-releases-tag-upload-url)、[下载附件](https://docs.atomgit.com/docs/apis/get-api-v-5-repos-owner-repo-releases-attach-files-file-name-download)。
+
 ### Release 资产命名
 
 Release 中区分两类资产：

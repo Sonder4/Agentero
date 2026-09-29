@@ -5,9 +5,14 @@ import { vaultStore } from "@/lib/vault/store";
 import {
 	closeTab,
 	hydratePlaceholderTabs,
+	setNotesSplit,
 	syncUpdatedPaperTabs,
 } from "@/lib/workspace/actions";
-import { getTabs, setTabs } from "@/lib/workspace/store";
+import {
+	type DockHandle,
+	registerDockHandle,
+} from "@/lib/workspace/dock-registry";
+import { getTabs, setActiveTabId, setTabs } from "@/lib/workspace/store";
 import {
 	createNotesSplitPane,
 	createPlaceholderTab,
@@ -754,5 +759,44 @@ describe("flat workspace helpers", () => {
 		expect(updatedNotes?.paperMeta?.year).toBe(2026);
 
 		expect(updatedOther?.title).toBe("todo.md");
+	});
+});
+
+describe("Notes layout actions", () => {
+	it("preserves an existing split and remembers/restores it across close and reopen", () => {
+		const paper = makeTab("/vault/p", {
+			kind: "paper",
+			mode: "pdf",
+			notesPath: "/vault/p/NOTES.md",
+		});
+		const notes = createNotesSplitPane(paper);
+		if (!notes) throw new Error("Missing notes fixture");
+		const handle = {
+			openPanel: vi.fn(),
+			rememberNotesSplitWidth: vi.fn(),
+			restoreNotesSplitWidth: vi.fn(),
+		};
+		registerDockHandle(handle as unknown as DockHandle);
+		try {
+			setTabs([paper, notes]);
+			setActiveTabId(paper.id);
+			setNotesSplit(true, { preserveLayoutMode: true });
+			expect(handle.openPanel).not.toHaveBeenCalled();
+			expect(handle.restoreNotesSplitWidth).not.toHaveBeenCalled();
+			setNotesSplit(false, { preserveLayoutMode: true });
+			expect(handle.rememberNotesSplitWidth).toHaveBeenCalledWith(
+				paper.id,
+				notes.id,
+			);
+			setActiveTabId(paper.id);
+			setNotesSplit(true, { preserveLayoutMode: true });
+			expect(handle.openPanel).toHaveBeenCalled();
+			expect(handle.restoreNotesSplitWidth).toHaveBeenCalledWith(
+				paper.id,
+				notes.id,
+			);
+		} finally {
+			registerDockHandle(null);
+		}
 	});
 });

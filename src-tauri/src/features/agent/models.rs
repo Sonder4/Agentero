@@ -13,6 +13,8 @@ pub enum AgentTemplate {
     Hermes,
     ClaudeAcp,
     CodexAcp,
+    /// Google Antigravity's official ACP server (separate from the retired `agy-acp` adapter).
+    AntigravityAcp,
     /// Qoder CLI native ACP (`qodercli --acp`).
     /// Docs: https://docs.qoder.com/en/cli/acp
     QoderCli,
@@ -51,6 +53,7 @@ impl<'de> serde::Deserialize<'de> for AgentTemplate {
             "hermes" => Self::Hermes,
             "claude-acp" => Self::ClaudeAcp,
             "codex-acp" => Self::CodexAcp,
+            "antigravity-acp" => Self::AntigravityAcp,
             "qodercli" => Self::QoderCli,
             "grok-build" => Self::GrokBuild,
             "pi" => Self::Pi,
@@ -76,6 +79,7 @@ impl AgentTemplate {
             Self::Hermes => "hermes",
             Self::ClaudeAcp => "claude-acp",
             Self::CodexAcp => "codex-acp",
+            Self::AntigravityAcp => "antigravity-acp",
             Self::QoderCli => "qodercli",
             Self::GrokBuild => "grok-build",
             Self::Pi => "pi",

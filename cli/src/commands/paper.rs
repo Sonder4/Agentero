@@ -756,6 +756,8 @@ fn move_paper(globals: &GlobalOpts, from: &str, dest_parent: &str) -> Result<Val
     let to = resolve_move_target(dest_parent, globals)?;
 
     if from.vault == to.vault {
+        // The shared headless entry builds its Wiki snapshot; this process has
+        // no unsaved editors to protect. Cross-vault migration stays separate.
         let new_rel = catalog::move_paper_under(&from.vault, &from.rel, &to.rel)?;
         Ok(json!({
             "from": from.rel,

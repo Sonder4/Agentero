@@ -40,6 +40,29 @@ export function zoomPreviewTranslate(
 	return { x: (1 - scale) * localX, y: (1 - scale) * localY };
 }
 
+/**
+ * Follow the reader's centered-page geometry while the document is narrower
+ * than its reading area, then blend to the gesture point as it overflows.
+ */
+export function zoomPreviewTranslateForViewport(
+	localX: number,
+	localY: number,
+	scale: number,
+	elementWidth: number,
+	viewportWidth: number,
+): { x: number; y: number } {
+	const pointer = zoomPreviewTranslate(localX, localY, scale);
+	if (!(elementWidth > 0) || !(viewportWidth > 0)) return pointer;
+
+	const centeredX = (1 - scale) * (elementWidth / 2);
+	const overflow = Math.max(0, elementWidth * scale - viewportWidth);
+	const blend = Math.min(1, overflow / (viewportWidth * 0.3));
+	return {
+		x: centeredX + (pointer.x - centeredX) * blend,
+		y: pointer.y,
+	};
+}
+
 /** Keep one decimal place when needed without showing a trailing `.0`. */
 export function formatPdfZoomPercentage(zoom: number): string {
 	const percentage = Math.round(zoom * 1000) / 10;

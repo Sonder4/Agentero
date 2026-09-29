@@ -2,18 +2,22 @@
   <img src="docs/assets/hero.png" alt="Agentero" width="100%" />
 </p>
 
+<h3 align="center">为人与 Agent 协作而生的一站式科研工作台</h3>
+
 <p align="center">
-  <a href="https://github.com/poco-ai/agentero/stargazers"><img src="https://img.shields.io/github/stars/poco-ai/agentero?style=flat&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/poco-ai/agentero/network/members"><img src="https://img.shields.io/github/forks/poco-ai/agentero?style=flat&logo=github" alt="GitHub forks" /></a>
-  <a href="https://github.com/poco-ai/agentero/issues"><img src="https://img.shields.io/github/issues/poco-ai/agentero?style=flat" alt="GitHub issues" /></a>
-  <a href="https://github.com/poco-ai/agentero/pulls"><img src="https://img.shields.io/github/issues-pr/poco-ai/agentero?style=flat" alt="GitHub pull requests" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/poco-ai/agentero/releases"><img src="https://img.shields.io/github/v/release/poco-ai/agentero?include_prereleases&style=flat" alt="Release" /></a>
-  <a href="https://agentero-docs.poco-ai.com"><img src="https://img.shields.io/badge/docs-online-5319E7?logo=mkdocs&logoColor=white" alt="Documentation" /></a>
+  保留人类舒适的 PDF 阅读习惯，为模型提供纯净的结构化上下文；文献、笔记与交互记录统一沉淀于本地。
 </p>
 
 <p align="center">
-  中文 | <a href="README.en.md">English</a>
+  <a href="https://github.com/poco-ai/agentero/stargazers"><img src="https://img.shields.io/github/stars/poco-ai/agentero?style=flat&logo=github" alt="GitHub stars" /></a>
+  <a href="https://github.com/poco-ai/agentero/releases"><img src="https://img.shields.io/github/v/release/poco-ai/agentero?include_prereleases&style=flat" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://agentero.app/"><img src="https://img.shields.io/badge/官网-agentero.app-5319E7" alt="Website" /></a>
+  <a href="https://agentero-docs.poco-ai.com"><img src="https://img.shields.io/badge/文档-在线查看-5319E7?logo=mkdocs&logoColor=white" alt="Documentation" /></a>
+</p>
+
+<p align="center">
+  <b>中文</b> | <a href="README.en.md">English</a>
 </p>
 
 如果本项目对你有帮助，请在右上角**给个 star** 吧！
@@ -22,207 +26,167 @@
   <a href="https://github.com/poco-ai/agentero/stargazers"><img src="https://github.com/user-attachments/assets/1d49b049-89ae-4992-a92d-d2411c8053b6" alt="Give me a star" width="480" /></a>
 </p>
 
-**Context is everything**。
+---
 
-如果说今天的模型是 $f$，越来越聪明，也越来越像。同一个 $f$，决定输出 $y$ 的，是输入 $x$，也就是 context。
+## 背景与设计初衷
 
-但科研的 context 今天是碎裂的：PDF 和高亮批注可能在 Zotero 里，笔记在 Obsidian 里，你和 AI 的讨论、提问、方案留在对话框里。三者互不相通，再聪明的 Agent 也只能读到碎片。
+Zotero 是学术管理领域非常优秀的软件。它功能成熟、生态稳定，帮助许多科研人员建立了最初的文献归档体系。
 
-所以我们做了 Agentero，旨在构建 Agent 友好、Agent 原生的文献管理方式，探索人与 Agent 在文献管理中的协作方式。
+但在当下日常科研与深度使用各类 Agent 时，传统的文献工具链暴露出一些断点：
 
-Agentero 是一个 Agent 时代的本地优先科研工作台，让输入、处理、输出三个环节都有 AI 参与。它不锁定具体 Agent 或模型——通过 ACP 接上你自己的本地 Agent（BYOA），工作上下文留在本地 Vault。
+* **上下文严重分散**：论文存储在 Zotero，笔记记在 Obsidian，与模型的推导和分析留在各个网页对话框中。三者数据彼此隔离，当需要 Agent 结合某篇具体论文与历史笔记进行深入推导时，用户必须反复手动复制粘贴。
+* **文献格式对模型不友好**：人类习惯阅读排版良好的 PDF 文件；但对于模型而言，直接解析双栏排版、跨页表格、复杂数学公式和交叉引用的成本极高，极易产生识别错误与幻觉。结构化 Markdown 与 LaTeX 才是模型容易准确理解的格式。
+* **维护成本较高**：AI 伴读、全文翻译、笔记同步等高频需求，往往需要安装和调试多个社区插件，配置门槛高且在版本升级时容易出现兼容性问题。
+* **批量自动化能力有限**：通过 Deep Research 或自动化检索工具发现的大量文献，目前仍需人工在浏览器中逐篇点击保存，难以顺畅衔接批量研究流。
 
-## 功能
+**Agentero 并非旨在替代 Zotero，而是探索一种人与 Agent 协同处理科研上下文的新方式**：
+* **人类负责**：提出研究问题、进行学术价值判断、深度研读与核心结论推导；
+* **Agent 负责**：批量检索筛选、元数据抓取、图表与公式提取、引用关系梳理及基础总结。
 
-- **Agent 原生体验**
-  - 通过 **ACP** 连接本机 Agent，Agentero 不锁定具体 Agent 或模型，工作上下文留在本地 Vault
-  - 支持快速安装、配置、卸载 Agent
-  - 支持划词对话、论文导入与 Skill 导入，让 Agent 参与检索、阅读与整理工作流
-  - 内置 CLI，支持导入论文、获取论文metadata、写入笔记、高亮等操作
-  - 内置 MCP，可以链接 ChatGPT web 等
-- **衔接 Zotero 生态**：兼容 Zotero 生态的导入方式，支持从标识符、链接或浏览器插件保存论文。一键导入 Zotero 书库，保留标签、笔记和附件。随时导出 BibTeX / BibLaTeX，衔接 LaTeX 写作流程
-- **论文导入**
-  - 支持软件内浏览 [Cool Papers](https://papers.cool/) 网站并导入文献
-  - 支持魔搭网站导入文献
-  - 支持 RSS 订阅
-  - 支持根据已有文献库推荐arXiv今日文献
-  - 支持搜索论文名字导入
-  - 支持 Zotero 浏览器插件导入文献
-- **文献管理**
-  - 支持获取库中文献的出版商，支持一键查找引用库中文献的新文献
-  - 解析论文的参考文献，并支持一键导入
-  - 论文标签、筛选
-  - 快速跳转对应 arXiv、alphaXiv 链接
-- **文献阅读与记录**
-  - 所见即所得的Markdown笔记编辑
-  - Markdown 双链语法与 `/` 快捷提示语法
-  - 支持一键翻译、按页翻译、划词翻译，支持多种免费 API 以及 BYOK 的 API 翻译服务
-  - 支持页码导航、底部缩放滑动条、大纲、⌘F 查找、平滑划词、高亮、批注、提问与翻译
-  - 解析论文中的图、表、公式与算法，并结合上下文理解
-  - 支持 Excalidraw
-  - 支持 LaTeX 编译
-- **云同步**：支持 S3 兼容的云同步服务。
-- **远程访问**：通过 SSH 隧道浏览远程知识库，数据保留在用户自己的服务器上。
-- **多系统兼容**：Mac、Windows、Linux，快捷键与常用软件保持对齐，不改变使用习惯。
-- **多种主题风格**： 支持多种主题风格，满足不同用户需求。
+---
 
-## 界面预览
+## 核心功能
+
+### 1. 结构化阅读与笔记系统
+* **PDF 阅读与批注**：提供大纲导航、整页与宽度自适应、平滑划词、高亮批注与全文检索。
+* **图表与公式提取**：自动解析论文中的数学公式、算法伪代码及表格，生成结构化 Markdown 与 LaTeX 内容，确保 Agent 调用时上下文准确无误。
+* **双向链接笔记**：内置所见即所得 Markdown 编辑器，支持 `[[双链]]` 引用语法、`/` 快捷指令与 LaTeX 实时渲染，笔记与文献建立原生关联。
+* **多模式翻译服务**：支持划词翻译、按页对照翻译与全文翻译，内置可用翻译通道，并支持配置自定义 API Key（BYOK）。
 
 <p align="center">
-  <img src="docs/assets/coolpaper.png" alt="Cool Papers 浏览与导入" width="90%" />
+  <img src="docs/assets/agent.png" alt="PDF 阅读与 Agent 伴读" width="90%" />
   <br/>
-  <sub>在应用内浏览 Cool Papers 并一键导入文献</sub>
+  <sub>分屏阅读与分析：左侧高亮批注，右侧本地 Agent 基于准确的结构化上下文进行答疑与推导</sub>
 </p>
 
 <p align="center">
-  <img src="docs/assets/agent.png" alt="Agent 伴读" width="90%" />
+  <img src="docs/assets/translate.png" alt="划词翻译与笔记联动" width="90%" />
   <br/>
-  <sub>分屏阅读 PDF，右侧 Agent 随时总结、提问与翻译</sub>
+  <sub>划词翻译与实时记录：阅读过程中提取的要点可直接沉淀至本地 Markdown 笔记</sub>
 </p>
+
+---
+
+### 2. 开放的 Agent 协议与自动化接口
+* **基于 ACP 协议连接本地 Agent**：底层遵循 Agent Client Protocol，支持连接各类本地运行的 Agent（如 Claude Code、OpenCode、Codex 或本地模型），不绑定特定厂商，上下文完全保留在本地。
+* **内置 MCP (Model Context Protocol)**：可作为 MCP Server 运行，允许 ChatGPT Web、Claude Desktop 等外部客户端直接检索并调用本地文献库作为上下文。
+* **极客 CLI 支持**：内置无头命令行工具，支持通过脚本实现批量导入文献、提取元数据与写入笔记等自动化工作流。
 
 <p align="center">
-  <img src="docs/assets/translate.png" alt="翻译与笔记" width="90%" />
+  <img src="docs/assets/image.png" alt="内置 MCP 连接" width="90%" />
   <br/>
-  <sub>划词翻译、按页翻译，结合 Markdown 笔记整理要点</sub>
+  <sub>内置 MCP 协议服务，支持将本地文献库无缝接入各类外部 AI 客户端</sub>
 </p>
+
+---
+
+### 3. 学术雷达与文献发现
+* **多渠道抓取**：内置集成 [Cool Papers](https://papers.cool/) 与魔搭社区，支持在软件内直接浏览并一键归档文献；支持学术 RSS 订阅。
+* **个性化推荐**：基于本地已有文献库的内容特征，自动推荐每日 arXiv 的相关最新论文。
+* **引用关系自动梳理**：自动解析文献末尾的参考文献列表，支持一键批量抓取入库；支持获取出版商元数据并追踪后续被引动态。
 
 <p align="center">
-  <img src="docs/assets/rss.png" alt="RSS 订阅" width="90%" />
+  <img src="docs/assets/coolpaper.png" alt="Cool Papers 集成" width="90%" />
   <br/>
-  <sub>订阅 RSS 源，追踪最新论文与博客动态</sub>
+  <sub>应用内直接浏览 Cool Papers 热门论文并一键导入本地知识库</sub>
 </p>
 
+---
+
+### 4. 兼容 Zotero 生态与本地透明存储
+* **Zotero 书库无缝迁移**：支持一键导入整个 Zotero 数据库，保留已有标签、笔记与附件；兼容 Zotero 浏览器扩展直接保存网页论文；支持导出 BibTeX / BibLaTeX。
+* **本地文件夹透明管理**：不使用私有数据库或散列混淆目录，所有文献与笔记均以标准文件（PDF、Markdown）保存在本地规范文件夹中，可自由使用外部编辑器读取。
+* **多端同步与远程访问**：支持与 S3 兼容的云存储服务进行同步；支持通过 SSH 隧道访问部署在远程服务器上的文献库。
+
+---
+
+## 界面与功能预览
+
+<details>
+<summary><b>点击展开：查看更多界面截图（RSS 订阅、技能扩展、Agent 配置、S3 云同步、主题风格）</b></summary>
+<br/>
+
+#### 1. 学术 RSS 订阅
+追踪关注的学术博客、实验室主页与前沿动态：
 <p align="center">
-  <img src="docs/assets/skill-import.png" alt="Skill 推荐" width="90%" />
-  <br/>
-  <sub>浏览并安装社区 Skill，扩展 Agent 的论文阅读与写作能力</sub>
+  <img src="docs/assets/rss.png" alt="RSS 订阅" width="85%" />
 </p>
 
+#### 2. Agent 技能（Skill）扩展
+浏览并安装社区提供的科研技能，扩展论文精读与写作分析能力：
 <p align="center">
-  <img src="docs/assets/agent-setting.png" alt="Agent 设置" width="90%" />
-  <br/>
-  <sub>通过 ACP 连接本机 Agent，安装、升级与切换默认 Agent</sub>
+  <img src="docs/assets/skill-import.png" alt="Skill 扩展" width="85%" />
 </p>
 
+#### 3. Agent 与连接配置
+通过 ACP 协议管理、升级和切换本地 Agent：
 <p align="center">
-  <img src="docs/assets/image.png" alt="MCP 连接" width="90%" />
-  <br/>
-  <sub>内置 MCP，可将 Agentero 能力接入 ChatGPT 等外部客户端</sub>
+  <img src="docs/assets/agent-setting.png" alt="Agent 设置" width="85%" />
 </p>
 
+#### 4. S3 兼容云存储同步
+配置私有或商业 S3 存储，实现多设备间知识库同步：
 <p align="center">
-  <img src="docs/assets/s3-sync.png" alt="S3 云同步" width="90%" />
-  <br/>
-  <sub>配置 S3 兼容存储，实现 Vault 云同步</sub>
+  <img src="docs/assets/s3-sync.png" alt="S3 同步设置" width="85%" />
 </p>
 
+#### 5. 多套界面主题
+支持亮色/暗色及多种配色风格，支持自适应系统外观设置：
 <p align="center">
-  <img src="docs/assets/theme.png" alt="主题风格" width="90%" />
-  <br/>
-  <sub>多种配色主题，支持跟随系统与界面缩放</sub>
+  <img src="docs/assets/theme.png" alt="主题配置" width="85%" />
 </p>
 
-## Quick Start
+</details>
 
-### 桌面应用
+---
 
-前往 [Agentero](https://agentero.poco-ai.com) 或 [Releases](https://github.com/poco-ai/agentero/releases) 下载。
+## 快速开始
 
-Linux 需 Ubuntu **22.04+**（webkit2gtk 4.1）。详见 [安装文档](docs/usage/getting-started.md)。
+### 桌面客户端安装 (macOS / Windows / Linux)
 
-HomeBrew
+可前往 **[官网 agentero.app](https://agentero.app/)** 或 **[GitHub Releases](https://github.com/poco-ai/agentero/releases)** 下载适用于各平台的预编译安装包。
 
+#### macOS (Homebrew)
 ```bash
 brew tap poco-ai/agentero
 brew install --cask agentero
+
 ```
 
-### CLI
+> **Linux 用户须知**：系统环境要求 Ubuntu 22.04+（依赖 `webkit2gtk 4.1`），详细依赖说明请参考 [安装文档](docs/usage/getting-started.md)。
 
-HomeBrew
+---
+
+### 命令行工具 (CLI)
+
+如需在终端或通过脚本自动化管理文献：
 
 ```bash
 brew tap poco-ai/agentero
 brew install agentero
+
+# 查看常用命令与参数
+agentero --help
+
 ```
 
-## 开发
+---
 
-### 项目结构
+## 致谢与社区
 
-```text
-agentero/
-├── AGENTS.md             # 面向 Agent / 开发者的仓库指南
-├── mkdocs.yml            # MkDocs 文档站配置
-├── src/                  # React + TypeScript 前端
-├── src-tauri/            # Tauri 2 + Rust Host（Vault、Wiki、ACP）
-├── cli/                  # headless CLI（bin agentero；见 docs/backend/cli.md）
-├── templates/vault/      # Create Vault 脚手架（含 .agents/skills）
-├── docs/                 # MkDocs：usage / frontend / backend / development（草稿）
-└── package.json
-```
+* 感谢 [LinuxDo](https://linux.do/) 与 [ModelScope 魔搭社区](https://modelscope.cn/) 成员在项目早期测试阶段提供的建议与反馈。
+* 感谢 [AtomGit](https://gitcode.com/poco-ai/Agentero) 提供的国内镜像支持。
 
-### 技术栈
+如果 Agentero 对你的日常学术研究有所帮助，欢迎在 GitHub 上为本项目点亮一个 **⭐ Star**。
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=white" alt="Tauri 2" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=black" alt="Rust" />
-  <img src="https://img.shields.io/badge/pnpm-workspace-F69220?logo=pnpm&logoColor=white" alt="pnpm" />
-</p>
+感谢所有贡献者！
 
-- **桌面壳**：[Tauri 2](https://v2.tauri.app/)
-- **前端**：[React](https://react.dev/)、[TypeScript](https://www.typescriptlang.org/)、[Tailwind CSS](https://tailwindcss.com/)、[shadcn/ui](https://ui.shadcn.com/)、[AI Elements](https://elements.ai-sdk.dev/)
-- **窗口管理**： Dockview
-- **PDF**： Embedded PDF
-- **编辑器**：
-  - [Plate](https://platejs.org/) / Markdown
-  - [CodeMirror](https://codemirror.net) / Code
-  - [Excalidraw](https://github.com/excalidraw/excalidraw)
-- **Agent**：[Agent Client Protocol](https://agentclientprotocol.com/)、BYOA
-
-### 测试
-
-```bash
-git clone https://github.com/poco-ai/agentero.git
-cd agentero
-pnpm install
-
-# 清除前端与 Rust 构建产物
-pnpm clean
-
-# 桌面应用（推荐）
-pnpm tauri dev
-
-# 仅前端预览（无原生 Vault / Agent 后端）
-pnpm dev
-```
-
-## 贡献
-
-欢迎提交 Issue 和 PR。
-
-1. Fork 后创建功能分支。
-2. 保持改动聚焦，并遵守现有 lint/format 设置（`pnpm lint` / `pnpm format`）。
-3. PR 描述清楚改动内容和原因。界面改动上传截图；`feat` 上传一段简单 demo（视频或 GIF）。打开 PR 时会带上模板。
-
-较大的想法请先开 issue 对齐范围。
-
-## License
-
-本项目使用 [MIT License](LICENSE)。
+![contributors img Made with contrib.rocks](https://contrib.rocks/image?repo=poco-ai/Agentero)
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/chart?repos=poco-ai/agentero&type=date&legend=top-left&sealed_token=dKsoXrNYkG3u-nEL3OLp0_aTrlN-GjDpvVEVJvC3xjH13q3viEwwkkB5m6LYT3iKu6LZXtZpQAXalvBwaFQdYgVTjTA1Dzp6NGe_BUQXA1cMt57wNdrYvA)](https://www.star-history.com/?type=date&repos=poco-ai%2Fagentero)
 
-## 致谢
+## 开源许可证
 
-感谢 [LinuxDo](https://linux.do/) 和 [ModelScope](https://modelscope.cn/) 社区的支持与反馈。
-
-感谢 [AtomGit](https://gitcode.com/poco-ai/Agentero): 在国内托管，帮助中国大陆用户更快访问项目与下载Release。
-
-感谢所有贡献者！
-
-![contributors img Made with contrib.rocks](https://contrib.rocks/image?repo=poco-ai/Agentero)
+本项目基于 [MIT License](LICENSE) 协议开源。

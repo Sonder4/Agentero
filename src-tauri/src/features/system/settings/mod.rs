@@ -99,6 +99,11 @@ pub struct AppSettings {
     /// Default on; off opens only the PDF/HTML body.
     #[serde(default = "default_true")]
     pub auto_open_paper_notes: bool,
+    /// Auto-ingest: adopt bare folders created under `papers/` that hold at
+    /// least one settled PDF into the library in place (catalog row + NOTES
+    /// shell + background metadata recognition). Default on.
+    #[serde(default = "default_true")]
+    pub auto_ingest: bool,
     /// When opening a new paper, close the active tab instead of adding a new one.
     /// Default off; useful for users who prefer a single-paper-at-a-time workflow.
     #[serde(default)]
@@ -220,6 +225,8 @@ pub struct EmbeddingSettings {
 pub struct LibraryColumnPref {
     pub key: String,
     pub visible: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width_rem: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
@@ -341,6 +348,7 @@ impl Default for AppSettings {
             paper_tree_sort_mode: default_paper_tree_sort_mode(),
             paper_note_mode: default_paper_note_mode(),
             auto_open_paper_notes: default_true(),
+            auto_ingest: default_true(),
             replace_current_tab_on_open_paper: false,
             auto_update_internal_links: default_auto_update_internal_links(),
             library_columns: default_library_columns(),
@@ -410,13 +418,15 @@ const LIBRARY_COLUMN_KEYS: &[&str] = &[
     "tags",
     "id",
     "citations",
+    "addedAt",
 ];
 fn default_library_columns() -> Vec<LibraryColumnPref> {
     LIBRARY_COLUMN_KEYS
         .iter()
         .map(|&key| LibraryColumnPref {
             key: key.to_string(),
-            visible: true,
+            visible: key != "addedAt",
+            width_rem: None,
         })
         .collect()
 }
@@ -994,7 +1004,7 @@ fn normalize(s: &mut AppSettings) {
     }
 
     // Library columns: drop unknown/duplicate keys, append missing ones
-    // (visible), and keep `title` visible so rows stay identifiable.
+    // with their default visibility, and keep `title` visible.
     let mut seen: Vec<String> = Vec::new();
     let mut cols: Vec<LibraryColumnPref> = Vec::new();
     for col in s.library_columns.drain(..) {
@@ -1014,14 +1024,15 @@ fn normalize(s: &mut AppSettings) {
         cols.push(LibraryColumnPref {
             key,
             visible: col.visible,
+            width_rem: col
+                .width_rem
+                .filter(|w| w.is_finite() && *w > 0.0)
+                .map(|w| w.clamp(5.0, 120.0)),
         });
     }
-    for &key in LIBRARY_COLUMN_KEYS {
-        if !seen.iter().any(|k| k == key) {
-            cols.push(LibraryColumnPref {
-                key: key.to_string(),
-                visible: true,
-            });
+    for fallback in default_library_columns() {
+        if !seen.iter().any(|key| key == &fallback.key) {
+            cols.push(fallback);
         }
     }
     for col in cols.iter_mut() {
@@ -1548,19 +1559,39 @@ mod tests {
     }
 
     #[test]
+    fn library_column_widths_roundtrip_and_normalize() {
+        let old: LibraryColumnPref =
+            serde_json::from_str(r#"{"key":"title","visible":true}"#).unwrap();
+        assert_eq!(old.width_rem, None);
+        let mut s = AppSettings::default();
+        s.library_columns[0].width_rem = Some(25.5);
+        s.library_columns[1].width_rem = Some(-2.0);
+        s.library_columns[2].width_rem = Some(999.0);
+        normalize(&mut s);
+        let encoded = serde_json::to_string(&s).unwrap();
+        let loaded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(loaded.library_columns[0].width_rem, Some(25.5));
+        assert_eq!(loaded.library_columns[1].width_rem, None);
+        assert_eq!(loaded.library_columns[2].width_rem, Some(120.0));
+    }
+
+    #[test]
     fn normalize_reconciles_library_columns() {
         let mut s = AppSettings {
             library_columns: vec![
                 LibraryColumnPref {
                     key: "bogus".into(),
+                    width_rem: None,
                     visible: true,
                 },
                 LibraryColumnPref {
                     key: "title".into(),
+                    width_rem: None,
                     visible: false,
                 },
                 LibraryColumnPref {
                     key: "year".into(),
+                    width_rem: None,
                     visible: false,
                 },
             ],
@@ -1578,7 +1609,8 @@ mod tests {
                 "publication",
                 "tags",
                 "id",
-                "citations"
+                "citations",
+                "addedAt"
             ]
         );
         // Title forced visible even though stored hidden.
@@ -1594,6 +1626,51 @@ mod tests {
             .find(|c| c.key == "authors")
             .unwrap();
         assert!(authors.visible);
+    }
+
+    #[test]
+    fn library_columns_added_date_persists_through_host_store() {
+        let store = AppSettingsStore::for_tests(AppSettings::default());
+        let mut legacy = AppSettings::default();
+        legacy.library_columns.retain(|col| col.key != "addedAt");
+        legacy.library_columns.reverse();
+        legacy.library_columns[0].visible = false;
+        let existing: Vec<_> = legacy
+            .library_columns
+            .iter()
+            .map(|col| (col.key.clone(), col.visible))
+            .collect();
+        // Simulate an older settings.json, exercising the real disk load path.
+        persist(&store.path, &legacy).expect("write legacy settings");
+        let (mut loaded, existed) = read_file(&store.path);
+        assert!(existed);
+        let added = loaded.library_columns.last().unwrap();
+        assert_eq!(added.key, "addedAt");
+        assert!(!added.visible);
+        assert_eq!(
+            loaded.library_columns[..existing.len()]
+                .iter()
+                .map(|col| (col.key.clone(), col.visible))
+                .collect::<Vec<_>>(),
+            existing
+        );
+
+        // Enable and move the column, then save via the desktop Host store.
+        let mut added = loaded.library_columns.pop().unwrap();
+        added.visible = true;
+        loaded.library_columns.insert(0, added);
+        let expected = serde_json::to_value(&loaded.library_columns).unwrap();
+        let returned = store.set(loaded).expect("save settings through Host");
+        assert_eq!(
+            serde_json::to_value(&returned.library_columns).unwrap(),
+            expected
+        );
+        let (reloaded, _) = read_file(&store.path);
+        assert_eq!(
+            serde_json::to_value(&reloaded.library_columns).unwrap(),
+            expected
+        );
+        fs::remove_file(&store.path).expect("remove test settings");
     }
 
     /// `agentero` is a parser (body-text) backend only. Layout analysis stays on

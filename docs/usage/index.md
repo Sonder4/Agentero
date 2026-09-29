@@ -18,6 +18,7 @@
 | 读 PDF、高亮、批注、写 NOTES | [阅读、标注与整理](read-and-organize.md) |
 | 接 Claude / Codex 等 ACP Agent | [接入 Agent](agents.md) |
 | 接 GenericAgent ACP | [接入 GenericAgent ACP](genericagent-acp.md) |
+| 配置 OpenAI 兼容翻译 | [配置 OpenAI 兼容翻译](translate-openai-compatible.md) |
 | 把 Vault 接到 ChatGPT / Codex MCP | [用 MCP 连接外部 Agent](mcp.md) |
 | 用 iPhone 连接桌面 Vault | [移动端](mobile.md) |
 | 用浏览器 Zotero Connector 保存 | [使用 Zotero Connector](zotero.md) |

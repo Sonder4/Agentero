@@ -32,6 +32,7 @@ import {
 	encodeSelectionToken,
 	encodeSkillToken,
 	extractMentionPaths,
+	extractSelectionTokens,
 	extractSkillIds,
 	plainTriggerSuffix,
 	replaceTrailingTriggerWithToken,
@@ -231,34 +232,39 @@ export function useAgentComposer({
 	// Ref exposed to AgentComposer so it can be wired to ComposerInlineInput.
 	const composerInputRef = useRef<ComposerInlineInputHandle>(null);
 
-	// Only explicitly pinned selections (Add to chat / ⌘K / ⌘L) become chips.
-	// Live drag-selection stays in the store so pinActiveSelection can freeze it,
-	// but is never shown or auto-inserted into the composer.
+	// Only explicitly pinned selections (Add to chat / ⌘L / ⇧⌘A) enter the draft.
+	// Live drag-selection stays in the store until pinActiveSelection freezes it.
 	const pinnedSelections = useSelectionStore((s) => s.pinned);
 	const selectionChips = pinnedSelections;
 
-	// Inline-ify newly pinned selections at the composer caret, then drop them
-	// from the ephemeral store. Visual drafts still use the round chip row.
+	// Move newly pinned selections into the draft's annotation summary, then
+	// drop them from the ephemeral store. They are hidden from the inline editor.
 	const prevPinnedRef = useRef<SelectionContext[]>([]);
 	useEffect(() => {
 		const prev = prevPinnedRef.current;
 		const inserted: SelectionContext[] = [];
 		for (const sel of pinnedSelections) {
 			if (!prev.some((p) => p.id === sel.id)) {
-				composerInputRef.current?.insertAtCursor(
-					encodeSelectionToken(sel),
-					true,
-				);
 				inserted.push(sel);
 			}
 		}
 		if (inserted.length > 0) {
+			setComposerText((current) => {
+				const existing = new Set(
+					extractSelectionTokens(current).map((selection) => selection.id),
+				);
+				const tokens = inserted
+					.filter((selection) => !existing.has(selection.id))
+					.map(encodeSelectionToken)
+					.join("");
+				return tokens ? `${tokens}${current}` : current;
+			});
 			for (const sel of inserted) {
 				removeSelection(sel.id);
 			}
 		}
 		prevPinnedRef.current = pinnedSelections;
-	}, [pinnedSelections]);
+	}, [pinnedSelections, setComposerText]);
 
 	const visualDrafts = useVisualContextStore((s) => s.drafts);
 

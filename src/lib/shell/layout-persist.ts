@@ -30,6 +30,8 @@ export type CustomRailsState = {
 };
 export type ShellLayoutPrefs = {
 	lastMode: LayoutWidthSlot;
+	/** Width owner survives manual changes (which switch lastMode to custom). */
+	lastPreset?: LayoutPresetMode;
 	widths: Partial<Record<LayoutWidthSlot, RailWidthPrefs>>;
 	customRails?: CustomRailsState;
 };
@@ -83,6 +85,13 @@ export function normalizeShellLayoutPrefs(raw: unknown): ShellLayoutPrefs {
 		}
 	}
 	const prefs: ShellLayoutPrefs = { lastMode, widths };
+	if (
+		rec.lastPreset === "agent" ||
+		rec.lastPreset === "notes" ||
+		rec.lastPreset === "reading"
+	) {
+		prefs.lastPreset = rec.lastPreset;
+	}
 	if (typeof rec.customRails === "object" && rec.customRails !== null) {
 		const rails = rec.customRails as Record<string, unknown>;
 		if (
@@ -142,7 +151,9 @@ export function seedBootWidths(
 ): { leftPx: number; rightPx: number } {
 	const primary = railWidthsForSlot(
 		prefs,
-		prefs.lastMode,
+		prefs.lastMode === "custom"
+			? (prefs.lastPreset ?? "custom")
+			: prefs.lastMode,
 		viewportPx,
 		left,
 		right,
@@ -233,6 +244,13 @@ export function saveLastMode(
 	if (prefs.lastMode === mode) return;
 	prefs.lastMode = mode;
 	persist(prefs, storage);
+}
+
+export function saveLastPreset(mode: LayoutPresetMode): void {
+	const prefs = getShellLayoutPrefs();
+	if (prefs.lastPreset === mode) return;
+	prefs.lastPreset = mode;
+	persist(prefs);
 }
 
 /** Snapshot the free-form arrangement (custom mode only). */

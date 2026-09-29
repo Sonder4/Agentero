@@ -5,6 +5,7 @@
 //! of synchronous `scan_catalog` (Doctor / chat switcher also call that path).
 
 use crate::features::agent::models::CatalogScanResponse;
+use crate::features::agent::registry::antigravity;
 use crate::features::agent::registry::discovery::resolve_command;
 use crate::features::agent::registry::templates::template_info;
 use std::collections::HashMap;
@@ -37,7 +38,7 @@ fn npm_version_cache() -> &'static Mutex<NpmVersionCache> {
 /// Hermes has no stable npm source — callers leave `update_available` unset.
 pub fn npm_package_for_template(template_id: &str) -> Option<&'static str> {
     match template_id {
-        "opencode" => Some("opencode-ai"),
+        "opencode" => Some("@opencode/cli"),
         "openclaw" => Some("openclaw"),
         "claude-acp" => Some("@anthropic-ai/claude-code"),
         "codex-acp" => Some("@openai/codex"),
@@ -70,20 +71,65 @@ pub fn enrich_catalog_updates(
         let Some(installed) = read_installed_version(&entry.template_id) else {
             continue;
         };
-        entry.installed_version = Some(installed.clone());
 
-        let latest = npm_package_for_template(&entry.template_id)
-            .and_then(|pkg| npm_view_version(pkg, proxy_enabled, proxy_url));
-
-        let Some(latest) = latest else {
-            continue;
-        };
-        entry.latest_version = Some(latest.clone());
-        entry.update_available = Some(is_newer(&latest, &installed));
+        let latest = latest_version_for_template(&entry.template_id, proxy_enabled, proxy_url);
+        (
+            entry.installed_version,
+            entry.latest_version,
+            entry.update_available,
+        ) = version_check_fields(installed, latest);
     }
 }
 
+/// Version fields for one catalog row: the installed version always, plus the
+/// newest silent-update target and its newer-than comparison once a target is
+/// known (an unknown target leaves Upgrade hidden).
+fn version_check_fields(
+    installed: String,
+    latest: Option<String>,
+) -> (Option<String>, Option<String>, Option<bool>) {
+    match latest {
+        Some(latest) => {
+            let update_available = is_newer(&latest, &installed);
+            (Some(installed), Some(latest), Some(update_available))
+        }
+        None => (Some(installed), None, None),
+    }
+}
+
+/// Newest version the silent updater can reach for a template. npm-based
+/// agents use the package dist-tag; Antigravity ships no npm package and is
+/// served by the ACP registry manifest instead.
+fn latest_version_for_template(
+    template_id: &str,
+    proxy_enabled: bool,
+    proxy_url: &str,
+) -> Option<String> {
+    if template_id == "antigravity-acp" {
+        // Registry is the only source (the ACP server has no npm package); an
+        // unreachable registry yields no target, so the row keeps the version
+        // recorded by the installer and shows no Upgrade button.
+        return match antigravity::resolve_release(proxy_enabled, proxy_url) {
+            Ok(release) => Some(release.version),
+            Err(error) => {
+                log::warn!(
+                    target: "agentero::agent",
+                    "antigravity version check failed: {error}"
+                );
+                None
+            }
+        };
+    }
+    npm_package_for_template(template_id)
+        .and_then(|pkg| npm_view_version(pkg, proxy_enabled, proxy_url))
+}
+
 fn read_installed_version(template_id: &str) -> Option<String> {
+    // Antigravity is a managed archive download: the installer records its
+    // release in a version marker, and the ACP server has no `--version`.
+    if template_id == "antigravity-acp" {
+        return antigravity::installed_version();
+    }
     let info = template_info(template_id)?;
     let detect = info
         .detect_command
@@ -284,7 +330,7 @@ mod tests {
 
     #[test]
     fn npm_package_map_covers_lifecycle_npm_templates() {
-        assert_eq!(npm_package_for_template("opencode"), Some("opencode-ai"));
+        assert_eq!(npm_package_for_template("opencode"), Some("@opencode/cli"));
         assert_eq!(
             npm_package_for_template("claude-acp"),
             Some("@anthropic-ai/claude-code")
@@ -295,6 +341,35 @@ mod tests {
             npm_package_for_template("minimax-code"),
             Some("@minimax-ai/code")
         );
+    }
+
+    #[test]
+    fn version_check_fields_flag_only_a_newer_target() {
+        // Registry moved ahead → Upgrade shows.
+        let (installed, latest, update) =
+            version_check_fields("1.0.0".to_string(), Some("1.1.0".to_string()));
+        assert_eq!(installed.as_deref(), Some("1.0.0"));
+        assert_eq!(latest.as_deref(), Some("1.1.0"));
+        assert_eq!(update, Some(true));
+
+        // Registry still on the installed release → nothing to upgrade.
+        let (_, _, update) = version_check_fields("1.1.0".to_string(), Some("1.1.0".to_string()));
+        assert_eq!(update, Some(false));
+
+        // No target (offline / no npm package): installed version only.
+        let (installed, latest, update) = version_check_fields("1.0.0".to_string(), None);
+        assert_eq!(installed.as_deref(), Some("1.0.0"));
+        assert_eq!(latest, None);
+        assert_eq!(update, None);
+    }
+
+    #[test]
+    fn antigravity_has_no_npm_target() {
+        // Antigravity rows are served by the registry manifest branch, so the
+        // npm lookup must stay out of their way (and never spawn npm for them).
+        assert_eq!(npm_package_for_template("antigravity-acp"), None);
+        assert_eq!(npm_package_for_template("hermes"), None);
+        assert!(latest_version_for_template("hermes", false, "").is_none());
     }
 
     #[test]

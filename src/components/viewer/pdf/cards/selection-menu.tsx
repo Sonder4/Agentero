@@ -1,4 +1,4 @@
-import { Languages } from "lucide-react";
+import { Copy, Languages } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ import type { ScreenPoint } from "@/components/viewer/pdf/types";
 import { cn } from "@/lib/core/utils";
 import type { HighlightColor } from "@/lib/pdf/highlight/palette";
 import { formatModShortcut } from "@/lib/shell/shortcuts";
+import { useSelectionOverlayGuard } from "@/lib/workspace/selection-overlay";
 
 type SelectionMenuProps = {
 	/** Screen point near the top-center of the selection (toolbar anchor) */
@@ -28,6 +29,7 @@ type SelectionMenuProps = {
 	/** Prepare the selection in the Web AI composer. Optional on non-PDF surfaces. */
 	onWebAi?: () => void;
 	onTranslate: () => void;
+	onCopy?: () => void;
 	/** Show the highlight color stack (needs marks/ to persist into). */
 	showHighlight?: boolean;
 	/** Show the translate action (ephemeral cards on surfaces without marks/). */
@@ -38,7 +40,7 @@ const BAR_H = 32;
 
 /**
  * Floating action bar shown next to a text selection: overlapping highlight
- * color dots (fan left on hover), then Translate / Quick chat / Add to chat.
+ * color dots (fan left on hover), then Translate / Copy / Quick chat / Add to chat.
  * The bar is pinned by its right edge so expanding colors only grow left —
  * action buttons never shift.
  * Annotate lives on the right-rail selection comment chip instead.
@@ -52,19 +54,24 @@ export function SelectionMenu({
 	onAddToChat,
 	onWebAi,
 	onTranslate,
+	onCopy,
 	showHighlight = true,
 	showTranslate = true,
 }: SelectionMenuProps) {
 	const { t } = useTranslation("viewer");
+	// Suspend dockview drag-and-drop while this toolbar floats over the tab
+	// strip so a stray drag cannot split the layout (#608).
+	useSelectionOverlayGuard();
 	// ⌘K = in-page Quick chat (Ask); ⌘L = Add to chat (pin + open Agent).
 	const quickChatShortcut = formatModShortcut("k");
 	const addToChatShortcut = formatModShortcut("l");
+	const copyShortcut = formatModShortcut("c");
 
 	const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
 	const vh = typeof window !== "undefined" ? window.innerHeight : 800;
 	// Approximate collapsed width for centering; flex content sizes the real bar.
 	// Pin with CSS `right` so stack width changes grow left without moving actions.
-	const barW = showTranslate ? 280 : 200;
+	const barW = (showTranslate ? 280 : 200) + (onCopy ? 32 : 0);
 	const expandPad = showHighlight ? HIGHLIGHT_COLOR_STACK_WIDTH_DELTA : 0;
 	let left = screen.x - barW / 2;
 	// Leave room on the left so the color stack can expand without clipping.
@@ -122,6 +129,24 @@ export function SelectionMenu({
 						<TooltipContent side="top">
 							{t("selection.translate")}
 						</TooltipContent>
+					</Tooltip>
+				) : null}
+				{onCopy ? (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								className="size-7"
+								aria-label={`${t("selection.copy")} ${copyShortcut}`}
+								onPointerDown={(event) => event.preventDefault()}
+								onClick={onCopy}
+							>
+								<Copy className="size-3.5" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="top">{t("selection.copy")}</TooltipContent>
 					</Tooltip>
 				) : null}
 				<button

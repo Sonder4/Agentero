@@ -85,6 +85,9 @@
 		"autoOpenPaperNotes": {
 			"label": "Open paper notes by default"
 		},
+		"autoIngest": {
+			"label": "Auto-import folders added under Papers"
+		},
 		"replaceCurrentTabOnOpenPaper": {
 			"label": "Replace current tab when opening a paper"
 		},
@@ -441,7 +444,7 @@
 			"deepl": "DeepL neural machine translation, configured with an official API key.",
 			"azure": "Microsoft Translator, configured with an Azure subscription key.",
 			"googleCloud": "Google Cloud Translation API, configured with a service-account key.",
-			"openaiCompatible": "Any OpenAI-compatible translation endpoint (OpenAI, Moonshot, DeepSeek, …)."
+			"openaiCompatible": "OpenAI Chat Completions-compatible endpoint. Enter the Base URL, e.g. https://api.openai.com/v1; Agentero appends /chat/completions."
 		},
 		"agentId": {
 			"label": "Agent",

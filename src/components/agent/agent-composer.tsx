@@ -170,7 +170,7 @@ export function AgentComposer(props: AgentComposerProps) {
 				)}
 				style={!compact && heightPx != null ? { height: heightPx } : undefined}
 			>
-				{/* Block chips: current file / visual only. Selections now live inline. */}
+				{/* Block chips: current file / visual only. Selections use the annotation summary. */}
 				{props.currentFilePath || visualDrafts.length > 0 ? (
 					<div
 						className={cn(

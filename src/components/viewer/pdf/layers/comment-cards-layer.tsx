@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
 	Tooltip,
@@ -327,6 +328,7 @@ const CommentCard = memo(function CommentCard({
 			data-pdf-chrome
 			className={cn(
 				COMMENT_CARD_SURFACE_CLASS,
+				!editing && "max-h-[70vh] overflow-y-auto",
 				editing
 					? "z-[6] bg-background/92 shadow-[0_18px_44px_rgba(15,23,42,0.22),0_4px_16px_rgba(15,23,42,0.12)] ring-2 ring-ring/50 dark:shadow-[0_18px_46px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.45)]"
 					: hovered
@@ -416,9 +418,11 @@ const CommentCard = memo(function CommentCard({
 						className="block w-full cursor-text text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 						onClick={(e) => {
 							e.stopPropagation();
+							if ((e.target as Element).closest("a, button")) return;
 							onOpen(item);
 						}}
 						onKeyDown={(e) => {
+							if (e.target !== e.currentTarget) return;
 							if (e.key === "Enter" || e.key === " ") {
 								e.preventDefault();
 								onOpen(item);
@@ -436,16 +440,22 @@ const CommentCard = memo(function CommentCard({
 								aria-hidden
 							/>
 						)}
-						<p
+						<div
 							className={cn(
-								"mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed",
+								"mt-1 max-h-[3.75rem] overflow-hidden break-words text-sm leading-relaxed group-hover:max-h-none group-hover:overflow-x-auto",
 								item.comment.trim()
 									? "text-foreground/80"
 									: "text-muted-foreground/70",
 							)}
 						>
-							{item.comment.trim() || t("annotations.placeholder")}
-						</p>
+							{item.comment.trim() ? (
+								<MessageResponse className="text-sm leading-relaxed [&_p]:my-0 [&_table]:min-w-max">
+									{item.comment}
+								</MessageResponse>
+							) : (
+								t("annotations.placeholder")
+							)}
+						</div>
 						{item.messages && item.messages.length > 0 ? (
 							<div className="mt-1.5 border-t border-border/40 pt-1.5">
 								<div className="line-clamp-3 space-y-1 group-hover:line-clamp-none">

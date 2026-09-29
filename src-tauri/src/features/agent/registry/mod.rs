@@ -1,3 +1,4 @@
+pub mod antigravity;
 pub mod bundled;
 pub mod discovery;
 pub mod lifecycle;

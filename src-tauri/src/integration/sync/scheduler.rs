@@ -64,8 +64,8 @@ impl SyncService {
 
     /// Best-effort push of every auto-sync vault on app exit, bounded per
     /// vault so a slow network can hold up quit for at most a few seconds.
-    /// Concurrent with an in-flight scheduled pass is safe: blobs are
-    /// content-addressed and HEAD advances via CAS.
+    /// Shares the same lease as manual/automatic passes. Skip a busy vault
+    /// rather than race its local base/state files during shutdown.
     pub fn flush_on_exit(&self) {
         for (key, cfg) in config::list_all() {
             if !cfg.auto_sync {
@@ -75,6 +75,10 @@ impl SyncService {
             if !dir.is_dir() {
                 continue;
             }
+            let Some(_lease) = self.try_begin(&key) else {
+                log::info!(target: "agentero::sync", "exit flush {key}: sync already running; skipped");
+                continue;
+            };
             let result = tauri::async_runtime::block_on(async {
                 tokio::time::timeout(
                     Duration::from_secs(EXIT_FLUSH_TIMEOUT_SECS),

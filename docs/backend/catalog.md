@@ -18,6 +18,7 @@
 - 字段以 `crates/agentero-core/src/features/paper/catalog/schema.rs` 为准（当前 schema v7）
 - **单一模型**：`papers.rs::PaperRecord` 同时是 catalog 行、`papers/<id>/.src/metadata.json` sidecar 投影与 IPC 出参（前端 `PaperMetadata` 只是其生成类型的派生别名）。构造走 `PaperRecord::local_pdf(id, title)`（`path` 故意为空），入库管线分配到文件夹后用 `at_path(rel)` 绑定；`upsert_conn` 归一化 `\` → `/` 并**拒绝空 `path`**，避免写出 `path = ''` 主键或把 sidecar 落到 Vault 根（#181）
 - **`date` / `year`**：发表时间以 `date`（TEXT）为准，精度随来源——`YYYY`、`YYYY-MM` 或 `YYYY-MM-DD`（arXiv/alphaXiv/bioRxiv 给全日期；Crossref 取 `issued`→`published-online`→`published-print` 的 date-parts，PubMed 取首个 `PubDate` 的 Year/Month/Day）。`year` 是派生列，由 `date` 的前四位重算，供引用键、树标签与既有消费者使用；`paper_update_meta` 只接受 `date`，清空它同时清空 `year`
+- **字段修改事务**：`update_meta` / `set_is_read` / `set_tags` / `add_tags` / `remove_tags` 共用 `mutate_paper`，在 `BEGIN IMMEDIATE` 事务内读取当前行、应用 patch、写入并回读结果后提交。写预约先于读，既防同进程并发，也覆盖桌面与 CLI 独立连接；标签增删保留集合语义。提交后 sidecar 与标题对应的 NOTES 同步仍为 best-effort；可靠投影重试与顺序保护尚未实现（见架构计划 B1）。
 - **sidecar 形状**：`.src/metadata.json` = `PaperRecord` 的 pretty JSON（snake_case，`abstract` / `type` 经 serde rename）。读回时 `path` 一律取盘上位置（sidecar 随文件夹移动，内嵌值可能过期）；容忍 Connector 时代的旧文件（无 `path`、tags 为裸字符串）
 - **`type` 列 = `PaperKind` 枚举**：`arxiv` / `pdf` / `html` / `doi` / `other`（全小写序列化，与前端 union 一致）。读侧归一化：历史 `'article'` → `Doi`，任何未识别值 → `Other`；**没有 schema migration**，下次 upsert 自然写回规范拼写。`From<&str>` / `FromSql` / `Deserialize` 三条读路径共用同一归一化，因此不会因脏值整行解析失败
 - **`status` 列 = 导入状态**，词表 `pending` / `importing` / `completed` / `failed`；已读与否由 `is_read` 专管（不要把阅读状态写进 `status`）。当前所有生产者都写 `completed`。Rust 侧仍是 `String`，前端靠 union 窄化维持类型安全；旧库遗留的 `status = 'unread'` 行**未**在读侧 heal（对比 `'article'`），因为前端目前不 switch `status`，无实际后果
@@ -26,7 +27,8 @@
 - `tags_json`：字符串或 `{name,color}`（Apple 8 色）。`@zotero:` / `@arxiv:` 前缀为内部隐标签（Connector 来源 / arXiv 学科分类），UI 与 CLI 默认不展示。**契约缺口**：`impl Serialize for PaperTag` 无色时输出裸字符串，而 specta 生成的类型是 `{ name, color }` 对象，因此前端必须保留 `PaperTagInput[]` + `coercePaperTags`
 - `paper_list` 对前端 Library 返回按 `id` 去重的视图：同一逻辑论文若因历史原因出现在多个路径，只保留一条（优先存在磁盘的路径，其次 `updated_at` 最新、路径最短/字典序最小）
 - `paper_rescan`：盘上有、库内无则补齐
-- 删除：回收站快照；恢复 upsert
+- **同 Vault 移动**：core `catalog/move_paper.rs::move_with_index` 统一文件移动、Wiki 改链、Catalog 与页数路径更新；后两者在同一个 SQLite 事务内提交，提交失败由既有 rename 事务补偿文件和链接。桌面/本地 Connector 经 Host `catalog/service.rs` 适配，CLI 经 `move_paper_under` 构造 Wiki 索引；业务不再放在 commands。重复移动到当前父目录统一成功返回原路径和空 `linkUpdate.updatedSources`（桌面原先报错，CLI/Connector 保持幂等）；桌面 `dirty_paths` 仍在写入前校验。跨 Vault migrate 与远端移动保持原实现。
+- 删除：回收站快照；恢复 upsert。`list_under_path` / `delete_under_path` / `move_under_path` 共用转义后的 SQL 子路径 pattern，`%`、`_` 与 escape 字符 `!` 按文件名的字面值匹配；保留 `/` 组件边界、Windows 分隔符归一及 SQLite 既有 LIKE 大小写规则，避免修改相似兄弟路径。
 - 连接启用 WAL + `busy_timeout`，写入不阻塞列表读取；每个 Vault 维护一条常驻连接（`schema.rs::with_catalog`，进程级缓存，Mutex 串行化 `spawn_blocking` 并发），PRAGMA/迁移只在首次打开执行；数据库文件被外部删除时自动丢弃旧句柄并重建
 - 连接缓存生命期：切走 / 关闭 vault 时由前端 `vault:opened` 作用域的 teardown 调 `vault_release` 驱逐（`evict_catalog_conn`）。否则一次会话中访问过的每个 Vault 都会把 SQLite 句柄与 WAL 留到进程退出。驱逐对进行中的操作安全 —— 它们持有连接的 `Arc` 克隆
 - `pdf_page_counts`：PDF 页数缓存表（随移动/删除同步），阅读热力图不再整文件打开 PDF 数页；缺缓存时仅对可视行按需补数并回写

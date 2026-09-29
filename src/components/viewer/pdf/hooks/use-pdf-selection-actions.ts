@@ -15,6 +15,7 @@ import type {
 	useSelectionCapability,
 } from "@embedpdf/plugin-selection/react";
 import { type Dispatch, type SetStateAction, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useSelectionQuickChat } from "@/components/selection/use-selection-quick-chat";
 import type { SelectionMenuState } from "@/components/viewer/pdf/types";
 import { annotationPdfAnchors } from "@/lib/agent/selection-annotations";
@@ -23,6 +24,7 @@ import {
 	selectionChatStore,
 } from "@/lib/agent/selection-chat-store";
 import { commands } from "@/lib/core/bindings";
+import { copyTextToClipboard } from "@/lib/core/clipboard";
 import { callApiResult } from "@/lib/core/ipc";
 import { notifyError } from "@/lib/core/notify";
 import { findLocalPdfPath } from "@/lib/paper";
@@ -85,6 +87,7 @@ export type PdfSelectionActions = {
 	handleMenuAddToChat: () => void;
 	handleMenuWebAi: () => void;
 	handleMenuTranslate: () => void;
+	handleMenuCopy: () => void;
 };
 
 export function usePdfSelectionActions({
@@ -103,6 +106,7 @@ export function usePdfSelectionActions({
 	// The right-rail annotate chip lives inside the page DOM. EmbedPDF often
 	// clears the live selection on pointerdown before React re-renders, so
 	// action handlers read this snapshot instead of the possibly-null state.
+	const { t } = useTranslation("viewer");
 	const selectionMenuRef = useRef(selectionMenu);
 	selectionMenuRef.current = selectionMenu;
 
@@ -253,6 +257,18 @@ export function usePdfSelectionActions({
 			});
 	}, [paperAbsPath, setSelectionMenu]);
 
+	const handleMenuCopy = useCallback(() => {
+		const menu = selectionMenuRef.current;
+		if (!menu) return;
+		const quote = menu.anchor.quote?.trim();
+		if (!quote) return;
+		void copyTextToClipboard(quote, {
+			successMessage: t("selection.copied"),
+		});
+		setSelectionMenu(null);
+		selectionCap?.clear(docId);
+	}, [t, setSelectionMenu, selectionCap, docId]);
+
 	return {
 		handleHighlight,
 		handleCommitSelectionNote,
@@ -260,5 +276,6 @@ export function usePdfSelectionActions({
 		handleMenuAddToChat,
 		handleMenuWebAi,
 		handleMenuTranslate,
+		handleMenuCopy,
 	};
 }

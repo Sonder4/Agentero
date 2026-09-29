@@ -34,6 +34,9 @@ export default defineConfig(async () => ({
 			"@embedpdf/engines",
 			"onnxruntime-web",
 			"@embedpdf/ai",
+			// Patched in-repo. Prebundling freezes the published copy, so a
+			// patch fix in plugin-tiling never reaches `vite dev`.
+			"@embedpdf/plugin-tiling",
 		],
 	},
 

@@ -113,3 +113,33 @@ describe("library date sort", () => {
 		expect(rows.map((r) => r.paper.title)).toEqual(["year-only", "june"]);
 	});
 });
+
+describe("library search index", () => {
+	it("includes identifiers, path, DOI, authors, publication, and tags", () => {
+		const row = buildPaperRow({
+			id: "10_3389_fpls_2025_1611992",
+			path: "papers/10_3389_fpls_2025_1611992",
+			title:
+				"Foundation models in plant molecular biology: advances, challenges, and future directions",
+			authors: ["Feng Xu", "Tianhao Wu"],
+			tags: [{ name: "Plant FM" }],
+			doi: "10.3389/fpls.2025.1611992",
+			publication: "Frontiers in Plant Science",
+			status: "completed",
+			added_at: "2026-09-23T07:32:44.036Z",
+			updated_at: "2026-09-25T00:37:10.966Z",
+			has_pdf: true,
+		} as PaperLibraryRow);
+
+		for (const query of [
+			"10_3389_fpls_2025_1611992",
+			"10.3389/fpls.2025.1611992",
+			"feng xu",
+			"frontiers in plant science",
+			"plant fm",
+			"papers/10_3389_fpls_2025_1611992",
+		]) {
+			expect(row.searchText).toContain(query);
+		}
+	});
+});

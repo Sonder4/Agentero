@@ -57,6 +57,27 @@ function scan(overrides: Partial<CatalogScanResponse>): CatalogScanResponse {
 }
 
 describe("buildDefaultAgentChoices", () => {
+	it("keeps the official Antigravity identity in the default selector", () => {
+		const choices = buildDefaultAgentChoices(
+			scan({
+				entries: [
+					entry({
+						templateId: "antigravity-acp",
+						name: "Antigravity",
+						registeredId: "catalog-antigravity-acp",
+					}),
+				],
+			}),
+		);
+
+		expect(choices).toMatchObject([
+			{
+				value: "catalog:antigravity-acp",
+				template: "antigravity-acp",
+			},
+		]);
+	});
+
 	it("offers ready catalog agents and available custom agents", () => {
 		const choices = buildDefaultAgentChoices(
 			scan({

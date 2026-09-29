@@ -18,6 +18,21 @@ pub const STANDARD_PRAGMAS: &str = "PRAGMA journal_mode = WAL;\n\
      PRAGMA busy_timeout = 5000;\n\
      PRAGMA foreign_keys = ON;";
 
+/// Pattern for descendants of a normalized relative path. Pair with
+/// `LIKE ? ESCAPE '!'`; only the final `%` is a wildcard. This retains
+/// SQLite LIKE's existing case rules and keeps the `/` component boundary.
+pub fn descendant_path_pattern(path: &str) -> String {
+    let mut pattern = String::with_capacity(path.len() + 2);
+    for ch in path.chars() {
+        if matches!(ch, '!' | '%' | '_') {
+            pattern.push('!');
+        }
+        pattern.push(ch);
+    }
+    pattern.push_str("/%");
+    pattern
+}
+
 /// Historical error-message wording of one database, kept stable so logs and
 /// greps on the strings below do not break.
 #[derive(Clone, Copy)]

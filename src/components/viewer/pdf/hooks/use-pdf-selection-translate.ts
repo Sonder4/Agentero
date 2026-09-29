@@ -108,6 +108,10 @@ export function usePdfSelectionTranslate({
 	const translateUnsubsRef = useRef<UnlistenFn[] | null>(null);
 	/** True once the viewer unmounts; guards runs accepted after teardown. */
 	const translateDisposedRef = useRef(false);
+	/** Invalidates callbacks after deletion or when a new selection starts. */
+	const translateGenerationRef = useRef(0);
+	/** A completed result may still be writing when its card is deleted. */
+	const pendingSavesRef = useRef(new Map<string, Promise<void>>());
 
 	// Closing the viewer must not strand the run's IPC listeners (or the run
 	// itself): terminal events never arrive for a hung run, so teardown cannot
@@ -115,6 +119,7 @@ export function usePdfSelectionTranslate({
 	useEffect(() => {
 		translateDisposedRef.current = false;
 		return () => {
+			translateGenerationRef.current += 1;
 			disposeAgentRun({
 				disposedRef: translateDisposedRef,
 				unsubsRef: translateUnsubsRef,
@@ -154,26 +159,11 @@ export function usePdfSelectionTranslate({
 		[paperAbsPath],
 	);
 
-	const markTranslateFailure = useCallback(
-		(id: string, message: string) => {
-			const latest = translatesRef.current.find((r) => r.id === id);
-			if (latest) {
-				upsertTranslate({
-					...latest,
-					error: message,
-					updatedAt: new Date().toISOString(),
-				});
-			}
-			setTranslateStreaming(false);
-			setTranslateError(message);
-		},
-		[upsertTranslate, translatesRef],
-	);
-
 	const translateSelection = useCallback(
 		(anchor: PdfAskAnchor) => {
 			const quote = anchor.quote?.trim();
 			if (!quote) return;
+			const generation = ++translateGenerationRef.current;
 			stopTranslateSession();
 			const paperPath = paperRelPath || paperAbsPath || "paper";
 			const paperKey = paperRelPath || paperAbsPath || null;
@@ -187,6 +177,37 @@ export function usePdfSelectionTranslate({
 			openCard({ kind: "translate", id: rec.id });
 			setTranslateStreaming(true);
 			setTranslateError(null);
+			let currentRecord = rec;
+			const isCurrentRun = () =>
+				translateGenerationRef.current === generation &&
+				!translateDisposedRef.current;
+			const commitResult = (result: string) => {
+				if (!isCurrentRun()) return false;
+				currentRecord = {
+					...currentRecord,
+					result: result.trim(),
+					updatedAt: new Date().toISOString(),
+					error: undefined,
+				};
+				upsertTranslate(currentRecord);
+				setTranslateStreaming(false);
+				setTranslateError(null);
+				const save = persistTranslate(currentRecord);
+				pendingSavesRef.current.set(rec.id, save);
+				void save.then(
+					() => {
+						if (pendingSavesRef.current.get(rec.id) === save) {
+							pendingSavesRef.current.delete(rec.id);
+						}
+					},
+					() => {
+						if (pendingSavesRef.current.get(rec.id) === save) {
+							pendingSavesRef.current.delete(rec.id);
+						}
+					},
+				);
+				return true;
+			};
 
 			void runSelectionTranslate({
 				text: quote,
@@ -200,46 +221,31 @@ export function usePdfSelectionTranslate({
 				sessionRef: translateSessionRef,
 				activeSessionRef,
 				appendChunk: (chunk) => {
-					const latest =
-						translatesRef.current.find((r) => r.id === rec.id) ?? rec;
-					upsertTranslate({
-						...latest,
-						result: (latest.result ?? "") + chunk,
-						updatedAt: new Date().toISOString(),
-						error: undefined,
-					});
-				},
-				commitAgentResult: (ev) => {
-					const latest =
-						translatesRef.current.find((r) => r.id === rec.id) ?? rec;
-					const next = {
-						...latest,
-						result: (ev.content || latest.result || "").trim(),
+					if (!isCurrentRun()) return;
+					currentRecord = {
+						...currentRecord,
+						result: (currentRecord.result ?? "") + chunk,
 						updatedAt: new Date().toISOString(),
 						error: undefined,
 					};
-					upsertTranslate(next);
-					void persistTranslate(next);
-					setTranslateError(null);
-					return true;
+					upsertTranslate(currentRecord);
 				},
-				commitProviderResult: (result) => {
-					const latest =
-						translatesRef.current.find((r) => r.id === rec.id) ?? rec;
-					const next = {
-						...latest,
-						result,
+				commitAgentResult: (ev) =>
+					commitResult(ev.content || currentRecord.result || ""),
+				commitProviderResult: commitResult,
+				markFailed: (message) => {
+					if (!isCurrentRun()) return;
+					currentRecord = {
+						...currentRecord,
+						error: message,
 						updatedAt: new Date().toISOString(),
-						error: undefined,
 					};
-					upsertTranslate(next);
-					void persistTranslate(next);
+					upsertTranslate(currentRecord);
 					setTranslateStreaming(false);
-					setTranslateError(null);
+					setTranslateError(message);
 				},
-				markFailed: (message) => markTranslateFailure(rec.id, message),
 				stopStreaming: () => {
-					setTranslateStreaming(false);
+					if (isCurrentRun()) setTranslateStreaming(false);
 				},
 			});
 		},
@@ -251,9 +257,7 @@ export function usePdfSelectionTranslate({
 			stopTranslateSession,
 			upsertTranslate,
 			persistTranslate,
-			markTranslateFailure,
 			openCard,
-			translatesRef,
 			activeSessionRef,
 		],
 	);
@@ -263,10 +267,19 @@ export function usePdfSelectionTranslate({
 			activeCardRef.current?.kind === "translate"
 				? activeCardRef.current.id
 				: null;
+		translateGenerationRef.current += 1;
 		stopTranslateSession();
 		if (id) {
-			setTranslates((prev) => prev.filter((r) => r.id !== id));
-			if (paperAbsPath) void deletePdfTranslate(paperAbsPath, id);
+			const pendingSave = pendingSavesRef.current.get(id);
+			const remaining = translatesRef.current.filter((r) => r.id !== id);
+			translatesRef.current = remaining;
+			setTranslates(remaining);
+			if (paperAbsPath) {
+				// A completed result may still be writing; delete after that write.
+				void (pendingSave ?? Promise.resolve()).then(() =>
+					deletePdfTranslate(paperAbsPath, id),
+				);
+			}
 		}
 		hideActiveCard();
 	}, [
@@ -275,6 +288,7 @@ export function usePdfSelectionTranslate({
 		hideActiveCard,
 		activeCardRef,
 		setTranslates,
+		translatesRef,
 	]);
 
 	return {

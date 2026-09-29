@@ -11,9 +11,9 @@
 //!   (`catalog::papers::move_under_path`), executed as the dependent commit
 //!   while the filesystem transaction is still recoverable.
 //!
-//! Callers (Tauri commands, connector) pass the dependent commit in as a
-//! closure, so this module itself only points "down" into wiki/catalog and
-//! never the other way around.
+//! Callers (shared application use cases or Host commands) pass the dependent
+//! commit as a closure. This engine depends on wiki capabilities, while the
+//! paper move use case owns Catalog and activity-log updates.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,7 +24,7 @@ use uuid::Uuid;
 // this module, so vault/catalog/connector keep zero direct `wiki` edges.
 pub use crate::features::wiki::index::WikiIndex;
 pub use crate::features::wiki::models::{
-    WikiExternalRenamePreview, WikiRenameErrorCode, WikiRenameResult,
+    WikiExternalRenamePreview, WikiRenameErrorCode, WikiRenameResult, WikiRenameRollback,
 };
 pub use crate::features::wiki::rename::{WikiRenameError, WikiRenameTransaction};
 pub use crate::features::wiki::WikiIndexState;

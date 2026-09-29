@@ -86,11 +86,14 @@ try {
 
 ## Rust 测试
 
-运行后端测试：
+在仓库根目录运行 Host、共享基础层与 CLI 测试：
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test -p agentero
+cargo test -p agentero-core -p agentero-cli
 ```
+
+CI 的 `agentero-tests` 任务运行 Host 测试，`cli-tests` 任务同时运行 `agentero-core` 与 CLI 自身的测试，并保留 CLI 构建检查。仅测试 Host/CLI 不会执行依赖 crate 的单元测试，因此必须显式选择 `agentero-core`，覆盖 Catalog 事务与并发字段更新等共享层回归。两个 headless 包复用同一任务的 Rust 构建产物与 PDFium provisioning，不执行桌面 ACP adapter staging；PDFium 的构建与运行时路径由现有 CI provisioning 统一设置。
 
 解析器和 resolver 的边界用例可以放在对应 Rust 模块的 `#[cfg(test)]` 中。依赖 Vault 的 graph/index 测试应创建临时目录和文件，不依赖已提交的缓存文件。
 

@@ -208,9 +208,9 @@ pub async fn perform_sync(
 ) -> Result<SyncOutcome, AppError> {
     let dir = vault_dir(vault_key)?;
     let cfg = config::get(vault_key).ok_or_else(|| AppError::message("sync is not configured"))?;
-    if !service.try_begin(vault_key) {
-        return Err(AppError::message("sync already running"));
-    }
+    let lease = service
+        .try_begin(vault_key)
+        .ok_or_else(|| AppError::message("sync already running"))?;
     emit_state(app, vault_key, "syncing", None);
     let progress_app = app.clone();
     let progress_key = vault_key.to_string();
@@ -226,7 +226,8 @@ pub async fn perform_sync(
         );
     };
     let result = engine::sync_vault(&dir, &cfg, &progress).await;
-    service.end(vault_key);
+    // Terminal event consumers immediately re-read status; release first.
+    drop(lease);
     match result {
         Ok(outcome) => {
             emit_state(app, vault_key, "idle", None);

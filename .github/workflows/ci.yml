@@ -50,6 +50,7 @@ jobs:
           set -euo pipefail
           case "${{ matrix.task }}" in
             quality)
+              node --test scripts/sync-atomgit-release.test.mjs
               # Stage the bundled ACP adapter trees so a broken staging script
               # (or a hostile upstream release) fails the PR, not the release build.
               pnpm adapters:stage
@@ -134,7 +135,9 @@ jobs:
               cargo test -p agentero
               ;;
             cli-tests)
-              cargo test -p agentero-cli
+              # Dependency builds do not run agentero-core's own tests. Keep
+              # both headless packages in this job to share PDFium and artifacts.
+              cargo test -p agentero-core -p agentero-cli
               cargo build -p agentero-cli
               ;;
             *)

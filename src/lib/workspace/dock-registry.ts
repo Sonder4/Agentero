@@ -25,8 +25,9 @@ export type DockHandle = {
 	 * pane / popout window this handle cannot see).
 	 */
 	canActivatePanel: (panelId: string) => boolean;
-	/** Make all visible Dockview grid groups equal width. */
-	equalizeGridGroups: () => void;
+	/** Remember / restore the shared two-column PDF / Notes proportion. */
+	rememberNotesSplitWidth: (paperId: string, notesId: string) => void;
+	restoreNotesSplitWidth: (paperId: string, notesId: string) => void;
 };
 
 let handle: DockHandle | null = null;

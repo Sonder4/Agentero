@@ -1,6 +1,6 @@
 [package]
 name = "agentero"
-version = "0.11.3"
+version = "0.11.4"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -50,9 +50,10 @@ tauri-build = { version = "2", features = [] }
 [dev-dependencies]
 # `start_paused` virtual clock for stream coalescer / throttle unit tests.
 tokio = { workspace = true, features = ["test-util", "macros"] }
-tempfile = { workspace = true }
 
 [dependencies]
+# RAII temporary SQLite snapshots for remote Catalog publication.
+tempfile = { workspace = true }
 # Tauri-independent foundations (errors, fs, http, paths, sqlite, usage log),
 # re-exported as `crate::core::*`. Must stay free of tauri/wry/tao.
 agentero-core = { path = "../crates/agentero-core" }
@@ -82,7 +83,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 dirs = { workspace = true }
 which = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "multipart", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "socks", "multipart", "cookies"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 flate2 = "1.1.9"
 tar = "0.4.46"

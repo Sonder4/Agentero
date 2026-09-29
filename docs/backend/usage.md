@@ -13,6 +13,8 @@
 
 代码：存储层 `crates/agentero-core/src/usage/`（tauri 无关，桌面端使用）；Tauri commands `src-tauri/src/core/usage/commands.rs`。前端入口 `src/lib/activity/track.ts`（`track()` 缓冲批量上报）。CLI 不再暴露 usage 命令。
 
+路径前缀筛选与移动后的 `usage_events` / `usage_daily` 路径同步，统一使用转义后的 SQL pattern：`%`、`_`、`!` 视为字面路径字符，只有末尾用于子路径的 `%` 是通配符；保留 `/` 边界、Windows 分隔符归一与既有 LIKE 大小写规则。
+
 ## 开关
 
 本地活动记录**始终开启**、无独立开关：`activity_record_events` 无条件写库。是否投影到 PostHog 由 `telemetryEnabled` 单独控制（见 [telemetry.md](telemetry.md)）。

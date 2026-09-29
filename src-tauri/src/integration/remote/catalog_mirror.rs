@@ -1,11 +1,11 @@
-//! Catalog checkout / checkin for remote vaults (`docs/development/remote-vault.md`).
+//! Catalog checkout / checkin for remote vaults (`docs/backend/remote.md`).
 //!
 //! SQLite cannot open over SFTP; Host keeps an ephemeral work copy and push-after-write.
 
 use crate::core::error::AppError;
 use crate::core::fs::{FsFileMeta, VaultFs, WriteOpts};
 use crate::features::paper::catalog::{ensure_catalog, schema_version, SCHEMA_VERSION};
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -60,10 +60,9 @@ impl CatalogMirror {
             }
             // ensure_catalog expects vault root (= work_root here)
             let _conn = ensure_catalog(work_root)?;
-            drop(_conn);
             // Create remote .agentero and push
             let _ = fs.mkdir(".agentero").await;
-            let bytes = std::fs::read(&work_db)?;
+            let bytes = snapshot_catalog(&work_db)?;
             fs.write(
                 CATALOG_REL,
                 &bytes,
@@ -113,7 +112,7 @@ impl CatalogMirror {
             }
         }
 
-        let bytes = std::fs::read(&self.work_db)?;
+        let bytes = snapshot_catalog(&self.work_db)?;
         // Write tmp then rename
         fs.write(
             CATALOG_TMP_REL,
@@ -144,6 +143,21 @@ impl CatalogMirror {
     }
 }
 
+/// Read a consistent, standalone SQLite image, including committed WAL pages.
+/// VACUUM INTO reads through SQLite's snapshot isolation; reading the source
+/// file (even after a checkpoint) would race active writers. The temporary
+/// output is owned for this call and cleaned up on success or failure.
+fn snapshot_catalog(db: &Path) -> Result<Vec<u8>, AppError> {
+    let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let snapshot = tempfile::NamedTempFile::new()?;
+    let path = snapshot
+        .path()
+        .to_str()
+        .ok_or_else(|| AppError::message("catalog snapshot path is not valid UTF-8"))?;
+    conn.execute("VACUUM INTO ?1", [path])?;
+    Ok(std::fs::read(snapshot.path())?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,20 +183,75 @@ mod tests {
 
         let mut mirror = CatalogMirror::checkout(fs.clone(), &work).await.unwrap();
         assert!(mirror.work_db_path().is_file());
-        assert!(remote_root.join(".agentero/catalog.sqlite").is_file());
+        let initial_remote = Connection::open_with_flags(
+            remote_root.join(CATALOG_REL),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        assert_eq!(schema_version(&initial_remote).unwrap(), SCHEMA_VERSION);
+        drop(initial_remote);
 
-        // Mutate work catalog via ensure + insert is heavy; just rewrite bytes after bump
-        {
-            let conn = mirror.open().unwrap();
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS _probe(x INTEGER); INSERT INTO _probe VALUES (1);",
+        // Keep the WAL writer alive throughout both pushes: closing the last
+        // connection would checkpoint and let a raw-main-file copy pass.
+        let writer = mirror.open().unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA wal_autocheckpoint = 0;
+             CREATE TABLE _probe(x INTEGER);
+             INSERT INTO _probe VALUES (1);",
             )
             .unwrap();
-        }
+        let mode: String = writer
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode, "wal");
+        assert!(
+            std::fs::metadata(work.join(".agentero/catalog.sqlite-wal"))
+                .unwrap()
+                .len()
+                > 0
+        );
+
+        // A separate snapshot sees committed data, never the in-flight insert.
+        writer
+            .execute_batch("BEGIN IMMEDIATE; INSERT INTO _probe VALUES (2);")
+            .unwrap();
         mirror.push(fs.clone()).await.unwrap();
-        let remote_bytes = std::fs::read(remote_root.join(".agentero/catalog.sqlite")).unwrap();
-        let work_bytes = std::fs::read(mirror.work_db_path()).unwrap();
-        assert_eq!(remote_bytes, work_bytes);
+        let pulled_work = tmp();
+        let pulled = CatalogMirror::checkout(fs.clone(), &pulled_work)
+            .await
+            .unwrap();
+        let reader = pulled.open().unwrap();
+        assert_eq!(
+            reader
+                .query_row("SELECT sum(x) FROM _probe", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(schema_version(&reader).unwrap(), SCHEMA_VERSION);
+        drop(reader);
+        writer.execute_batch("COMMIT;").unwrap();
+
+        mirror.push(fs.clone()).await.unwrap();
+        let pulled_again_work = tmp();
+        let pulled_again = CatalogMirror::checkout(fs.clone(), &pulled_again_work)
+            .await
+            .unwrap();
+        let reader = pulled_again.open().unwrap();
+        assert_eq!(
+            reader
+                .query_row("SELECT sum(x) FROM _probe", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            reader
+                .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "ok"
+        );
+        drop(reader);
+        drop(writer);
 
         // Conflict detection
         std::fs::write(
@@ -196,5 +265,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&remote_root);
         let _ = std::fs::remove_dir_all(&work);
+        let _ = std::fs::remove_dir_all(&pulled_work);
+        let _ = std::fs::remove_dir_all(&pulled_again_work);
     }
 }

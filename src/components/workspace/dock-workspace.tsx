@@ -44,6 +44,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { DocView, type DocViewProps } from "@/components/workspace/doc-view";
+import { PaperPathBar } from "@/components/workspace/paper-path-bar";
 import { AgenteroTabGroupChip } from "@/components/workspace/tab-group-chip";
 import { errorText } from "@/lib/core/error";
 import { notifyError } from "@/lib/core/notify";
@@ -61,6 +62,11 @@ import {
 	ensureLibraryTabFirst,
 	isLibraryPanel,
 } from "@/lib/workspace/library-tab-position";
+import {
+	rememberNotesSplitWidth,
+	restoreNotesSplitWidth,
+} from "@/lib/workspace/notes-split-width";
+import { useSelectionOverlayActive } from "@/lib/workspace/selection-overlay";
 import {
 	isSplitDragPayload,
 	readDraggedVaultPaths,
@@ -138,8 +144,9 @@ export type DockWorkspaceHandle = {
 	activatePanel: (panelId: string) => void;
 	/** True when the panel is registered in this dock and can be activated. */
 	canActivatePanel: (panelId: string) => boolean;
-	/** Make all visible Dockview grid groups equal width. */
-	equalizeGridGroups: () => void;
+	/** Remember / restore the shared two-column PDF / Notes proportion. */
+	rememberNotesSplitWidth: (paperId: string, notesId: string) => void;
+	restoreNotesSplitWidth: (paperId: string, notesId: string) => void;
 };
 
 type WorkspaceCtx = {
@@ -170,9 +177,13 @@ function WorkspacePane(props: IDockviewPanelProps<{ panelId: string }>) {
 		tab.mode === "html" &&
 		tab.notesPath != null &&
 		activePanelId === tabIdForPath(tab.notesPath);
-	const active = activePanelId === panelId || notesActive;
+	const focused = activePanelId === panelId;
+	const active = focused || notesActive;
 	return (
 		<div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
+			{focused ? (
+				<PaperPathBar tab={tab} vaultPath={centerProps.vaultPath} />
+			) : null}
 			<DocView
 				{...centerProps}
 				tab={tab}
@@ -538,6 +549,10 @@ export const DockWorkspace = memo(
 		const { t } = useTranslation(["app", "viewer"]);
 		const apiRef = useRef<DockviewApi | null>(null);
 		const workspaceRootRef = useRef<HTMLDivElement>(null);
+		// Suspend dockview DnD while a floating selection overlay (toolbar or
+		// ask card) is open — they can sit against the tab strip and a stray
+		// drag would split the layout (#608).
+		const selectionOverlayActive = useSelectionOverlayActive();
 		const syncingRef = useRef(false);
 		const layoutTimerRef = useRef<number | null>(null);
 		const disposablesRef = useRef<{ dispose: () => void }[]>([]);
@@ -725,10 +740,13 @@ export const DockWorkspace = memo(
 				canActivatePanel(panelId) {
 					return Boolean(apiRef.current?.getPanel(panelId));
 				},
-				equalizeGridGroups() {
+				rememberNotesSplitWidth(paperId, notesId) {
 					const api = apiRef.current;
-					if (!api) return;
-					rebalanceGridGroupWidths(api);
+					if (api) rememberNotesSplitWidth(api, paperId, notesId);
+				},
+				restoreNotesSplitWidth(paperId, notesId) {
+					const api = apiRef.current;
+					if (api) restoreNotesSplitWidth(api, paperId, notesId);
 				},
 			}),
 			[endSync],
@@ -1067,6 +1085,9 @@ export const DockWorkspace = memo(
 						// Tauri WKWebView: HTML5 DnD is unreliable; pointer covers mouse+touch.
 						// Floating/popout already disabled — no cross-window HTML5 drag needed.
 						dndStrategy="pointer"
+						// Floating selection overlays sit against the tab strip; freeze
+						// tab/group drag while one is open so a stray drag cannot split (#608).
+						disableDnd={selectionOverlayActive}
 						dndEdges={{ size: { value: 24, type: "pixels" } }}
 						dropOverlayModel={resolveDropOverlayModel}
 						// Within-group tabs + between groups + Ctrl+M keyboard dock.

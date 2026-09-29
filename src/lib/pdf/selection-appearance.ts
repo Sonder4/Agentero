@@ -4,7 +4,10 @@ import type {
 	PdfRun,
 	Rect,
 } from "@embedpdf/models";
-import type { SelectionRangeX } from "@embedpdf/plugin-selection";
+import type {
+	FormattedSelection,
+	SelectionRangeX,
+} from "@embedpdf/plugin-selection";
 
 type TextFragment = {
 	rect: Rect;
@@ -77,6 +80,24 @@ function unionRects(first: Rect, second: Rect): Rect {
 	};
 }
 
+export function unionRectsAll(rects: Rect[]): Rect | null {
+	if (!rects.length) return null;
+	let minX = Number.POSITIVE_INFINITY;
+	let minY = Number.POSITIVE_INFINITY;
+	let maxX = Number.NEGATIVE_INFINITY;
+	let maxY = Number.NEGATIVE_INFINITY;
+	for (const r of rects) {
+		minX = Math.min(minX, r.origin.x);
+		minY = Math.min(minY, r.origin.y);
+		maxX = Math.max(maxX, r.origin.x + r.size.width);
+		maxY = Math.max(maxY, r.origin.y + r.size.height);
+	}
+	return {
+		origin: { x: minX, y: minY },
+		size: { width: maxX - minX, height: maxY - minY },
+	};
+}
+
 function verticalOverlap(first: Rect, second: Rect): number {
 	const top = Math.max(first.origin.y, second.origin.y);
 	const bottom = Math.min(
@@ -131,7 +152,8 @@ function selectedRunFragments(
 			const averageWidth = glyphWidthSum / glyphCount;
 			if (
 				!sameVisualLine(currentRect, rect) ||
-				gap > averageWidth * MAX_GLYPH_GAP_FACTOR
+				gap > averageWidth * MAX_GLYPH_GAP_FACTOR ||
+				gap < -averageWidth * MAX_GLYPH_GAP_FACTOR
 			) {
 				flush();
 			}
@@ -162,7 +184,7 @@ function mergeLineFragments(fragments: TextFragment[]): Rect[] {
 		const maximumGap =
 			Math.max(previous.averageGlyphWidth, fragment.averageGlyphWidth) *
 			MAX_GLYPH_GAP_FACTOR;
-		if (gap > maximumGap) {
+		if (gap > maximumGap || gap < -maximumGap) {
 			merged.push(fragment);
 			continue;
 		}
@@ -220,4 +242,28 @@ export function buildTightSelectionRects(
 		selectedRunFragments(run, selectionStart, selectionEnd),
 	);
 	return mergeLineFragments(fragments);
+}
+
+export function tightenFormattedSelection(
+	pages: FormattedSelection[],
+	geometry: Record<number, PdfPageGeometry> | undefined,
+	selection: SelectionRangeX | null,
+): FormattedSelection[] {
+	if (!geometry || !selection) return pages;
+
+	return pages.map((page) => {
+		const tightRects = buildTightSelectionRects(
+			geometry[page.pageIndex],
+			selection,
+			page.pageIndex,
+		);
+		if (!tightRects.length) return page;
+
+		const rect = unionRectsAll(tightRects) ?? page.rect;
+		return {
+			...page,
+			rect,
+			segmentRects: tightRects,
+		};
+	});
 }

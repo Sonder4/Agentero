@@ -1,3 +1,4 @@
+import { tightenFormattedSelection } from "@/lib/pdf/selection-appearance";
 /**
  * Text-selection detection for the EmbedPDF viewer: turning an EmbedPDF drag
  * selection into a placed floating action menu, publishing the selected text to
@@ -157,8 +158,8 @@ export function usePdfTextSelection({
 			setIsSelecting(true);
 		});
 		const offEnd = scope.onEndSelection(() => {
-			const pages = selectionCap.getFormattedSelection(docId);
-			if (!pages.length) {
+			const rawPages = selectionCap.getFormattedSelection(docId);
+			if (!rawPages.length) {
 				setIsSelecting(false);
 				setSelectionMenu(null);
 				return;
@@ -168,6 +169,11 @@ export function usePdfTextSelection({
 			// selections the first page may be scrolled out of view, which makes the
 			// toolbar appear off-screen and seem missing.
 			const state = selectionCap.getState(docId);
+			const pages = tightenFormattedSelection(
+				rawPages,
+				state.geometry,
+				state.selection,
+			);
 			const endPage = state.selection?.end?.page ?? null;
 			const anchorPage = menuAnchorPage(
 				pages,

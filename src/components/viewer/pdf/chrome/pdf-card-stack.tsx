@@ -28,6 +28,7 @@ type PdfCardStackProps = {
 		onAddToChat: () => void;
 		onWebAi?: () => void;
 		onTranslate: () => void;
+		onCopy?: () => void;
 		/** Hide highlight / translate (no marks/ to persist into); keep Ask. */
 		showHighlight?: boolean;
 		showTranslate?: boolean;
@@ -104,6 +105,7 @@ export function PdfCardStack({
 					onAddToChat={selectionMenu.onAddToChat}
 					onWebAi={selectionMenu.onWebAi}
 					onTranslate={selectionMenu.onTranslate}
+					onCopy={selectionMenu.onCopy}
 					showHighlight={selectionMenu.showHighlight}
 					showTranslate={selectionMenu.showTranslate}
 				/>

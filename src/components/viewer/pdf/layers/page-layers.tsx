@@ -11,11 +11,15 @@
  * to silently break memoization.
  */
 
+import { useDocumentState } from "@embedpdf/core/react";
 import {
+	ignore,
 	PdfAnnotationSubtype,
 	PdfBlendMode,
+	PdfErrorCode,
 	type PdfHighlightAnnoObject,
 	type PdfLinkAnnoObject,
+	type Rotation,
 } from "@embedpdf/models";
 import {
 	AnnotationLayer,
@@ -24,16 +28,20 @@ import {
 } from "@embedpdf/plugin-annotation/react";
 import { PagePointerProvider } from "@embedpdf/plugin-interaction-manager/react";
 import { LayoutAnalysisLayer } from "@embedpdf/plugin-layout-analysis/react";
-import { RenderLayer } from "@embedpdf/plugin-render/react";
+import { useRenderCapability } from "@embedpdf/plugin-render/react";
 import { SearchLayer } from "@embedpdf/plugin-search/react";
 import { TilingLayer } from "@embedpdf/plugin-tiling/react";
 import { EyeOff, Languages, Loader2 } from "lucide-react";
 import {
+	type CSSProperties,
 	memo,
 	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
+	useEffect,
+	useMemo,
 	useRef,
+	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { PDF_CHROME_CHIP } from "@/components/viewer/pdf/chrome/pdf-chrome-surface";
@@ -142,6 +150,113 @@ const PDF_TEXT_SELECTION_BACKGROUND = "rgba(96, 165, 250, 0.28)";
 
 /** A mark region pinned to a page (visual draft frame / formula legend frame). */
 type PageRegion = { page: number; region: PdfAskNormalizedRect } | null;
+
+type AgenteroRenderLayerProps = {
+	documentId: string;
+	pageIndex: number;
+	scale?: number;
+	dpr?: number;
+	className?: string;
+	style?: CSSProperties;
+};
+
+function pdfPageRenderRotation(
+	documentState: ReturnType<typeof useDocumentState>,
+	pageIndex: number,
+): Rotation {
+	// `normalizeRotation: true` reports the unrotated content-space size and
+	// keeps /Rotate in `page.rotation`; the raster is only upright when the
+	// caller re-applies it (see test/pdf-page-rotation.test.ts).
+	const pageRotation = documentState?.document?.pages[pageIndex]?.rotation ?? 0;
+	return ((((pageRotation + (documentState?.rotation ?? 0)) % 4) + 4) %
+		4) as Rotation;
+}
+
+function AgenteroRenderLayer({
+	documentId,
+	pageIndex,
+	scale: scaleOverride,
+	dpr: dprOverride,
+	className,
+	style,
+}: AgenteroRenderLayerProps) {
+	const { provides: renderProvides } = useRenderCapability();
+	const documentState = useDocumentState(documentId);
+	const [imageUrl, setImageUrl] = useState<string | null>(null);
+	const urlRef = useRef<string | null>(null);
+	const refreshVersion = useMemo(() => {
+		if (!documentState) return 0;
+		return documentState.pageRefreshVersions[pageIndex] || 0;
+	}, [documentState, pageIndex]);
+	const actualScale = useMemo(() => {
+		if (scaleOverride !== undefined) return scaleOverride;
+		return documentState?.scale ?? 1;
+	}, [scaleOverride, documentState?.scale]);
+	const actualDpr = useMemo(() => {
+		if (dprOverride !== undefined) return dprOverride;
+		return window.devicePixelRatio;
+	}, [dprOverride]);
+	const rotation = useMemo(
+		() => pdfPageRenderRotation(documentState, pageIndex),
+		[documentState, pageIndex],
+	);
+
+	useEffect(() => {
+		if (!renderProvides) return;
+		void refreshVersion;
+		const task = renderProvides.forDocument(documentId).renderPage({
+			pageIndex,
+			options: {
+				scaleFactor: actualScale,
+				dpr: actualDpr,
+				rotation,
+			},
+		});
+		task.wait((blob) => {
+			const url = URL.createObjectURL(blob);
+			setImageUrl(url);
+			urlRef.current = url;
+		}, ignore);
+		return () => {
+			if (urlRef.current) {
+				URL.revokeObjectURL(urlRef.current);
+				urlRef.current = null;
+				return;
+			}
+			task.abort({
+				code: PdfErrorCode.Cancelled,
+				message: "canceled render task",
+			});
+		};
+	}, [
+		documentId,
+		pageIndex,
+		actualScale,
+		actualDpr,
+		rotation,
+		renderProvides,
+		refreshVersion,
+	]);
+
+	const handleImageLoad = () => {
+		if (!urlRef.current) return;
+		URL.revokeObjectURL(urlRef.current);
+		urlRef.current = null;
+	};
+
+	if (!imageUrl) return null;
+	return (
+		<img
+			src={imageUrl}
+			alt=""
+			aria-hidden="true"
+			draggable={false}
+			onLoad={handleImageLoad}
+			className={className}
+			style={{ width: "100%", height: "100%", ...style }}
+		/>
+	);
+}
 
 /**
  * Anchor geometry of an open ask / translate card. Anchor-only: it keeps its
@@ -508,7 +623,7 @@ export const PdfPageLayers = memo(function PdfPageLayers({
 
 	const paperRaster = (
 		<div className="absolute inset-0 isolate">
-			<RenderLayer
+			<AgenteroRenderLayer
 				documentId={docId}
 				pageIndex={pageIndex}
 				scale={Math.min(zoomRef.current, PDF_BASE_LAYER_SCALE_CAP)}

@@ -16,6 +16,12 @@
 
 前端伪路径 `remote:<sessionId>`（解析在 `core/remote.rs`，纯字符串工具，features/integration 共用）。客户端：**macOS / Linux**（Windows 客户端暂不支持打开远程 Vault）。
 
+## Catalog 发布
+
+本机 work mirror 开启 WAL。初始化远端 Catalog 与每次 push 都通过 SQLite `VACUUM INTO` 导出独立一致快照，读取已提交的主库与 WAL 内容；其他写连接保持打开或存在未提交事务时也不依赖连接关闭/checkpoint。临时快照在成功或失败后自动清理，导出失败不上传。
+
+发布仍先检查远端 size/mtime 是否与上次一致，再上传临时文件并 rename（不支持时回退覆盖）；该检查保留现有乐观冲突语义，不是远端原子 CAS。快照只包含开始读取时可见的已提交数据，之后的修改由后续 push 发布。sidecar 投影及远端会话清退仍见架构计划 B1/B2。
+
 ## 超时
 
 建连与校验约 15s；SFTP 操作约 30s；SSH ServerAlive；不自动重连、不重放写。

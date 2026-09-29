@@ -1,6 +1,6 @@
 # Rust 端架构重构计划（2026-09）
 
-状态：**规划已更新，实施未开始**。最后更新：2026-09-08。
+状态：**实施中：R1 WAL 一致快照、R2 字段原子更新、R3 sync 占用 RAII、A1 共享移动用例已完成，其余按下文状态推进**。最后更新：2026-09-25。
 
 来源：2026-09-06 三轮架构审计；2026-09-08 由 3 个 sub-agent 分别复核应用边界、存储一致性、运行时与集成，主评审补充核实论文入库及解析链路。本次为静态代码评审，未运行行为测试。历史 V 编号保留，旧 P0–P6 执行顺序由本文新计划替代。
 
@@ -32,12 +32,14 @@
 
 ## A · 共享完整业务用例
 
-**问题与证据：** 桌面及 Connector 已共用 `src-tauri/src/features/paper/catalog/commands.rs::paper_move_service`（550 行），调用现有 `run_local_rename_transaction`；CLI 的 `cli/src/commands/paper.rs` 仍走 core `catalog/mod.rs::move_paper_under`（66 行），只移动文件并更新 Catalog。业务服务放在 commands 层，也迫使其他入口引用传输层。关联 V2–V9、V38。
+**问题与证据：** 原先桌面/Connector 的完整移动服务位于 commands，CLI 只移动文件与 Catalog；A1 已将这三条本地路径统一到 core 用例。跨 Vault migrate、远端移动、trash 与入库仍按后续切片处理。关联 V2–V9、V38。
 
-- [ ] **A1 共享移动用例（首个架构切片）**
+- [x] **A1 共享移动用例（首个架构切片，2026-09-25）**
   - 在现有 core 的对应业务域建立 application/service 入口，复用已有 Wiki 规划、执行和回滚，不再造 rename 引擎。
   - Desktop 传入当前索引与 dirty paths；CLI 构造所需索引并明确无本进程编辑状态。Connector 调用服务而非 `commands`。
   - 验收：同一 fixture 经桌面服务和 CLI 后，文件、Catalog、`[[...]]` 双链结果一致；失败不遗留半移动状态；桌面脏文档保护保留。
+  - 实施：core `catalog/move_paper.rs::move_with_index` 复用 rename 引擎；Host `catalog/service.rs` 仅适配 blocking/索引锁，Connector 不再引用 commands；CLI 的兼容入口构建新索引。`papers` 与 `pdf_page_counts` 路径更新补为同一事务。重复移动统一成功 no-op（桌面原报错语义调整，wire 形状不变）。核心测试覆盖冷/热索引结果、dirty 阻止、第二条 SQL 故障后的文件/链接/Catalog 补偿；Host 测试比较两入口，CLI 真实命令测试覆盖改链/no-op。验证：core Catalog 29 通过；CLI `paper_move` 3 通过；Host service 1 通过；`export_typescript_bindings` 通过且 wire 文件无变化；三 crate `clippy --all-targets -- -D warnings` 通过。提交：`267e22caa`。
+  - 后续正确性修复（2026-09-25）：Catalog 的子树快照/删除/移动、页数表和 Usage 筛选/改名统一使用 `sqlite::descendant_path_pattern` + `LIKE … ESCAPE '!'`，避免路径 `%` / `_` 被当作通配符；`!` 同时转义。保留路径边界、Windows 分隔符归一与既有 LIKE 大小写规则。实际 SQL 回归覆盖精确/嵌套路径、相似旁支、转义字符、非 ASCII、页数及 Usage 聚合/其他 Vault 隔离。验证：core Catalog 30 通过、Usage 13 通过；三 crate `clippy --all-targets -- -D warnings` 通过。提交记录待主审提交后补充。
 - [ ] **A2 统一 trash/restore 操作计划**（依赖 A1 的用例边界；恢复策略与 B 协作）
   - 收敛本地与远端的校验、恢复 manifest、执行顺序和失败结果；IO 执行器保留能力差异。
   - 验收：移动后 manifest 写失败、Catalog 更新失败、远端发布失败均有明确可恢复结果；同表测试覆盖两种后端。
@@ -52,13 +54,13 @@
 
 ## B · 数据提交、投影与恢复契约
 
-**问题与证据：** core `catalog/papers.rs:391` 在 DB 提交后独立写 sidecar，`:1001` 起的字段操作读整行再 upsert；Host `integration/remote/catalog_mirror.rs:105` 发布时裸读 SQLite 主文件。`integration/sync/engine.rs:466` 从拉取的文件重建 Catalog，说明投影失败会影响跨设备传播。关联 V1、V10、V11、V33、V35。
+**问题与证据：** core `catalog/papers.rs::upsert_paper` 在 DB 提交后独立写 sidecar；字段操作原先读整行再 upsert 的并发窗口已由 R2 的事务内 patch 修复，可靠投影仍待实施；Host `integration/remote/catalog_mirror.rs` 发布原先裸读 SQLite 主文件的问题已由 R1 的一致快照修复。`integration/sync/engine.rs:466` 从拉取的文件重建 Catalog，说明投影失败会影响跨设备传播。关联 V1、V10、V11、V33、V35。
 
-- [ ] **B1 字段级事务与可重试投影**（以前置 R1/R2 为基础）
+- [ ] **B1 字段级事务与可重试投影**（以前置 R1/R2 为基础；R2 字段修改事务已完成，投影部分未开始）
   - 以 `PaperMutation` 或等价用例保存字段 patch 语义，读改写在一个 DB 事务内完成；不把所有更新统一成全行覆盖。
   - 同事务记录待投影版本，由有序 projector 写 sidecar；失败可重试，旧版本不得覆盖新版本。同步扫描前排空相关投影或显式报告未就绪。
   - 验收：并发改不同字段不丢值；投影失败、乱序及重启后可恢复；Catalog 始终是结构化 metadata 的事实来源。
-- [ ] **B2 明确远端 snapshot/publish 边界**
+- [ ] **B2 明确远端 snapshot/publish 边界**（R1 一致快照已完成，其余未开始）
   - 以一致快照发布 Catalog，保持冲突检查；将连接、work-root 和待发布投影纳入远端会话生命周期。
   - 修正 remote commit 先上传目录、后在 staging 生成 sidecar 的顺序缺口（`integration/remote/paper_commit.rs:84`）。
   - 验收：活跃连接写入后 push/pull 数据完整；sidecar 到达正确目标；失败不误报已发布；断开清退连接后才能清理临时目录。
@@ -96,13 +98,13 @@
 
 ## E · 调度内核与任务资源生命周期
 
-**问题与证据：** `features/jobs/mod.rs:417` 集中匹配业务并发，`:1549` 起包含论文后续调度；已存在 runner 注册和取消 RAII。`integration/sync/commands.rs:211` 的占用直到 await 后手工释放，而 `scheduler.rs:53` 直接 abort。关联 V13、V14、V28–V30。
+**问题与证据：** `features/jobs/mod.rs:417` 集中匹配业务并发，`:1549` 起包含论文后续调度；已存在 runner 注册和取消 RAII。sync 原先手工释放占用且 scheduler 直接 abort 的问题已由 R3 的 `SyncRunLease` 修复。关联 V13、V14、V28–V30。
 
 - [ ] **E1 JobCenter 退出论文业务策略**（与 D1 协作）
   - 论文域构建 JobSpec / PipelinePlan，拥有参数、后续工作和配额策略；调度内核只管理作用域、去重键、资源配额、依赖、执行与终态。
   - 保留已有 runner 注册、backfill probe、panic settle 与取消登记，不重写调度器；不预设必须把 JobKind enum 改为裸字符串。
   - 验收：新增业务任务不修改中央业务 match；既有 fingerprint、Renderer offer/report、timeout 和终态行为兼容。
-- [ ] **E2 薄运行作用域与释放契约**（从 R3 的 sync lease 起步）
+- [ ] **E2 薄运行作用域与释放契约**（R3 sync lease 已完成，子任务/服务作用域仍未开始）
   - `RunLease` 管理占用/取消登记，任务作用域管理子任务、协作取消及有界等待；区分停止周期触发与取消在途工作。
   - 逐步覆盖同步、Agent 运行及服务句柄；同步退出 flush 与正常同步共享必要的占用规则。
   - 验收：取消、错误、任务 abort 后资源可再次获取；应用退出与配置重启可预测。`spawn_blocking` 和远端写入明确可取消边界，不能宣称 abort 可终止所有操作。
@@ -130,11 +132,13 @@
 
 ## R · 前置正确性修复
 
-小范围修复可单独提交，不等待架构重构；以下均未实施。安全与正确性修复不因其规模小而推迟。
+小范围修复可单独提交，不等待架构重构；R1/R2/R3 已完成，其余状态见各项。安全与正确性修复不因其规模小而推迟。
 
-- [ ] **R1 WAL 一致快照**（旧 P0-1）：用 SQLite 支持的一致快照机制导出；若采用 checkpoint + 读文件，必须协调写连接、检查 checkpoint 结果并保证读取窗口，不能认为新开短连接就自动安全。活跃 WAL 连接 write→push→pull 的 LocalFs 测试进入 CI，无需真实 SSH。
-- [ ] **R2 字段原子更新**（旧 P0-7）：局部 UPDATE 或单事务读改写，尤其 add/remove tags 必须保护集合操作；事务内回读返回完整 record。验证并发不同字段和标签集合更新。
-- [ ] **R3 sync 占用 RAII**（旧 P0-2）：guard 释放占用；abort 后可再次同步，作为 E2 的第一个落点。
+验证保护（2026-09-25）：CI 的既有 `cli-tests` 任务改为显式运行 `cargo test -p agentero-core -p agentero-cli`，使 R2 等共享层回归测试进入 PR 检查；复用该任务的 PDFium provisioning 与构建产物，不增加矩阵任务或桌面 adapter staging。本地 `cargo test -p agentero-core`：506 通过、4 个既有手动/性能测试 ignored、0 失败；详见[测试入口](../test/index.md)。提交：`4abb65180`。
+
+- [x] **R1 WAL 一致快照**（旧 P0-1，2026-09-25）：CatalogMirror 初始化与 push 使用 `VACUUM INTO` 导出自包含快照，保留 size/mtime 冲突检查；临时文件由 RAII 清理，不依赖关闭连接或 checkpoint。验证：`cargo test -p agentero catalog_mirror::tests --lib -- --nocapture`（1 通过），LocalFs 回归测试保持 WAL 写连接存活，验证未提交行不可见、提交后再次 push/checkout 的内容及完整性；`cargo clippy -p agentero --lib --tests -- -D warnings` 通过。B2 的投影就绪与会话清退尚未完成。提交：`cf9b4730f`。
+- [x] **R2 字段原子更新**（旧 P0-7，2026-09-25）：`papers.rs::mutate_paper` 用 `BEGIN IMMEDIATE` 统一 `update_meta`、`set_is_read`、`set_tags`、`add_tags`、`remove_tags` 的事务内读改写与回读。标签集合修改受同一写预约保护，覆盖独立 SQLite 连接。验证：`cargo test -p agentero-core features::paper::catalog::papers::tests -- --nocapture`（22 通过），新增独立连接写预约/错误释放及并发字段/标签集合测试。sidecar 与 NOTES 仍在提交后 best-effort 写入；B1 的投影重试和顺序保护未完成。提交：`90f26ca99`。
+- [x] **R3 sync 占用 RAII**（旧 P0-2，2026-09-25）：`SyncRunLease` 替代手工 begin/end，正常/错误/超时/abort 均释放占用；退出 flush 使用相同 lease，忙碌 Vault 跳过。验证：`cargo test -p agentero integration::sync::tests --lib -- --nocapture`（3 通过），覆盖真实 tokio abort、虚拟时钟 timeout、错误返回与多 Vault 独立性。保留既有 wire 终态；abort 后的 UI 事件对账及子任务协调取消留在 E2，不宣称 abort 可撤销远端 IO 或 `spawn_blocking`。提交：`ef2ca0a75`。
 - [ ] **R4 Agent 交互清理与转发**（旧 P0-3/P0-4）：超时/取消移除 pending，补齐 Bridge ask-user/elicitation 请求转发；晚到回答保持 `resolved:false`，完整交互链路验证后再由 F1 替换临时转发。
 - [ ] **R5 论文附件分类**（旧 P0-5）：附件 PDF/TeX 不成为主资产；测试锁定 AGENTS.md 约定，不未经确认搬动历史用户文件。
 - [ ] **R6 文件授权与会话清退**（旧 P0-6/P0-8 连接项）：规范化路径并校验已授权 Vault 范围；远端断开前释放 work-root 连接和任务。验证正常打开流程及越界拒绝。
@@ -154,14 +158,14 @@
 
 | 批次 | 工作 | 主要依赖 | 状态 |
 |---|---|---|---|
-| 前置修复 | R1–R6 | 各项独立；按影响优先处理 R1/R2/R3 | 未开始 |
-| 第一批 | A1 移动用例，随后 A2/A3 | 复用已有 rename；A2 与 B3 明确恢复契约 | 未开始 |
+| 前置修复 | R1–R6 | 各项独立；按影响优先处理 R1/R2/R3 | R1/R2/R3 已完成，其余未开始 |
+| 第一批 | A1 移动用例，随后 A2/A3 | 复用已有 rename；A2 与 B3 明确恢复契约 | A1 已完成，A2/A3 未开始 |
 | 第二批 | B1–B3、A4、C1/C2 | B 以前置数据修复为基础；A4/C 接入提交结果 | 未开始 |
 | 第三批 | D1/D2、E1 | D1 与 E1 先对齐计划接口；D2 可独立试点 | 未开始 |
-| 可独立推进 | E2/E3、F1–F3 | E2 从 R3 起步；F 内部按事件→执行→装配 | 未开始 |
+| 可独立推进 | E2/E3、F1–F3 | E2 从 R3 起步；F 内部按事件→执行→装配 | E2 的 sync lease 已完成，其余未开始 |
 | 后置 | S1–S6 | 主线边界稳定、或具体需求证明收益 | 未开始 |
 
-首个架构改动建议选择 **A1**：范围可控，已有实现可复用，又能用 CLI/桌面对比证明业务语义收敛。R 中的数据与安全问题先行或穿插处理，不要求所有 R 完成后才能开始独立主线。
+首个架构切片 **A1** 已完成：复用现有 rename，用 CLI/桌面对比证明本地移动语义收敛；后续继续 A2/A3。R 中的数据与安全问题先行或穿插处理，不要求所有 R 完成后才能开始独立主线。
 
 ## 旧任务归并索引
 
@@ -180,7 +184,7 @@
 
 不扩大 HostHooks 为万能宿主对象，不引入覆盖所有 feature 的 VaultService，不强并 ACP/Bridge/Connector wire 协议。不为了搬模块引入 ConfigProvider，不要求所有本地 IO 走 async trait，不把 UI 未保存内容的决策交给后台对账。继续保留 `core::http`、`run_blocking`、settings 订阅、JobCenter 既有 runner/清理能力与 feature-first 语义目录。
 
-相关路线图：[crate 拆分记录](crate-split-roadmap.md)、[开发索引](index.md)。本文为未实施架构计划；已实现行为仍以 `docs/backend/`、`docs/frontend/` 和代码为准。
+相关路线图：[crate 拆分记录](crate-split-roadmap.md)、[开发索引](index.md)。本文为进行中的架构计划；已实现行为仍以 `docs/backend/`、`docs/frontend/` 和代码为准。
 
 ## 附录：历史证据与裁决（V 编号保持稳定）
 

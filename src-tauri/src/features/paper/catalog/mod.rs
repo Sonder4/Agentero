@@ -8,3 +8,6 @@ pub use agentero_core::features::paper::catalog::*;
 
 #[cfg(feature = "desktop")]
 pub mod commands;
+
+#[cfg(feature = "desktop")]
+pub mod service;

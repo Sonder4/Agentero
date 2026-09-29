@@ -5,6 +5,7 @@ import {
 	formatPdfZoomPercentage,
 	parsePdfZoomPercentage,
 	zoomPreviewTranslate,
+	zoomPreviewTranslateForViewport,
 } from "@/lib/pdf/zoom";
 
 describe("parsePdfZoomPercentage", () => {
@@ -49,5 +50,24 @@ describe("zoomPreviewTranslate", () => {
 		// ...while a point twice as far from it ends up twice as far from the origin.
 		expect(zoomPreviewTranslate(200, 100, 2)).toEqual({ x: -200, y: -100 });
 		expect(zoomPreviewTranslate(200, 100, 0.5)).toEqual({ x: 100, y: 50 });
+	});
+});
+
+describe("zoomPreviewTranslateForViewport", () => {
+	it("keeps a narrow document centered", () => {
+		expect(zoomPreviewTranslateForViewport(50, 100, 2, 200, 500)).toEqual({
+			x: -100,
+			y: -100,
+		});
+	});
+
+	it("smoothly hands the horizontal anchor to the pointer on overflow", () => {
+		const blended = zoomPreviewTranslateForViewport(50, 100, 3, 200, 500);
+		expect(blended.x).toBeCloseTo(-133.333, 3);
+		expect(blended.y).toBe(-200);
+		expect(zoomPreviewTranslateForViewport(50, 100, 4, 200, 500)).toEqual({
+			x: -150,
+			y: -300,
+		});
 	});
 });

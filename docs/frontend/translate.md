@@ -14,6 +14,8 @@ Settings → **翻译**：
   - Host `settings_get` / `settings:changed` 对 key 按字符 redact 为 `*`；`settings_set` 收到纯 `*` 串时保留原密钥。
   - `translate_text` 在 key 缺省或为 `*` 掩码时从 Host 配置解析真实密钥。
   - 随后做一次连通性 probe。卡片不承担「设为默认」选择。
+  - OpenAI 兼容翻译要求服务支持 **Chat Completions** 格式：`POST {baseUrl}/chat/completions`，返回 `choices[0].message.content`。设置里填写 Base URL（例如 `https://api.openai.com/v1` 或服务商自己的 `/v1` 根地址），不要填写 Responses / Completions 端点；应用会自动追加 `/chat/completions`。
+    用户配置说明见 [配置 OpenAI 兼容翻译](../usage/translate-openai-compatible.md)。
 - 默认服务为 Agent 时展示 Agent / 模型座。
 - **自定义翻译提示词**（`translate.customPrompt`，空 = 内置）：非空时整体替换默认指令块（角色 + 规则），仅对 **Agent 与 OpenAI 兼容**两条 LLM 路径生效（免费引擎与内置 provider 无提示词概念）。支持 `{{targetLang}}` / `{{sourceLang}}` 变量（display name；源语言恒为自动检测 → "the source language"）；**原文与 `[[n]]` 批量规则始终由应用自动追加**，不提供 `{{text}}` 变量，提示词极简也不会破坏批量切分。「填入默认」把当前内置提示词填进输入框供修改，「恢复默认」清空。上限 8000 字符。OpenAI 兼容路径的提示词由 Host 在 `translate_text` 内从 settings 注入（WebView 调用方无感）。
 
@@ -21,6 +23,7 @@ Settings → **翻译**：
 
 - PDF 划词菜单「翻译」（首要入口）。
   - 结果卡贴合选区锚点（`trackPin`），PDF 滚轮滚动时随页重定位。
+  - 删除翻译卡后，迟到的翻译结果不会重新写回；已经开始的保存完成后才删除对应文件。
   - 翻译完成后若未悬停结果卡 / 原文黄高亮 / 页边针，约 700ms 后自动收起；流式输出期间保持可见。隐藏后仍可从页边针重新打开。
 - PDF **全文翻译**（工具栏 Languages，在视觉批注旁）：
   - 依赖版面分析 + PDF 文字层；翻译 `text` / `abstract` / `header` / `figure_title`（图题·表题）区域（score ≥ 30%）。

@@ -54,7 +54,7 @@
 ```bash
 pnpm lint && pnpm test && pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml
-cargo test -p agentero-cli
+cargo test -p agentero-core -p agentero-cli
 ```
 
 | # | 界面 | 操作 | 预期 | 结果 |
@@ -62,6 +62,7 @@ cargo test -p agentero-cli
 | 0.2.1 | 终端 | 跑上列命令 | 全部通过 | ☐ |
 | 0.2.2 | GitHub Actions | Release job 的 updater secret 校验 | `TAURI_SIGNING_PRIVATE_KEY` 和密码缺失时在创建 Draft 前失败 | ☐ |
 | 0.2.3 | Draft Release | 检查 updater 资产 | 有 `latest.json`、各平台 updater 包与对应 `.sig`；`latest.json` 包含每个平台的 URL 和签名 | ☐ |
+| 0.2.3a | GitHub Actions / AtomGit | 配置 `ATOMGIT_TOKEN`，确认代码镜像包含对应提交，检查构建后的同步 job 并按 tag 重跑 | 同名 tag 提交一致；说明和全部上传附件同步；每个附件回读 SHA-256 一致；重跑不重复附件；Draft 对应 `pre`，正式发布最新稳定版后才标记 `latest`；缺令牌或附件失败时 job 报错 | ☐ |
 | 0.2.4 | GitHub Actions / 应用·设置 | 确认 `AGENTERO_BUILTIN_API_KEY` secret 已配且本次构建注入了它 | 缺 secret **不会**让构建失败（`option_env!` 当未设置处理），只会静默产出没有内置 provider 的包。信号：设置 → 翻译的「Agentero 内置」可选、设置 → Agent → Embedding 的来源默认「Agentero 内置」、设置 → 版面解析的正文引擎默认「Agentero 内置」。见 [release.md](release.md) §内置 Provider 构建期注入 | ☐ |
 
 ### 0.3 安装启动
@@ -266,6 +267,7 @@ cargo test -p agentero-cli
 | 7.1.2 | 中间栏·PDF | 底栏改页码 / PageDown / Home | 跳页正确 | ☐ |
 | 7.1.3 | 中间栏·PDF | 底部缩放滑动条、滚轮缩放 | 重渲染清晰；放大后可平移 | ☐ |
 | 7.1.3a | 中间栏·PDF / NOTES 分屏 | PDF 设为手动 125%，先慢速、再快速向左/向右来回拖动中间 divider，然后在一次快速拖动中直接松手 | divider 与 PDF panel 边界按屏幕帧连续跟手，无输入堆积、PDF 蓝色文本选区或松手回跳；页面仅被即时裁剪/扩展，125% 保持，滚动区域与最终尺寸一致 | ☐ |
+| 7.1.3b | 中间栏·PDF | 打开含 `/Rotate 90` 页面的 PDF（如 `10_3389_fpls_2025_1611992` 第 4、5 页） | 旋转页按横向页框显示；不被塞进竖向 A4 页框；翻译分屏同样正确 | ☐ |
 | 7.1.4 | 中间栏·PDF | 打开大纲，点书签 | 跳到对应位置 | ☐ |
 | 7.1.5 | 中间栏·PDF | `⌘F` 输入文中词 | 命中高亮；可下一条 | ☐ |
 

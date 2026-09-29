@@ -38,6 +38,7 @@ import { useMcpSync } from "@/hooks/use-mcp-sync";
 import { useNativeMenuEvents } from "@/hooks/use-native-menu-events";
 import { useAnyModalOverlayOpen } from "@/hooks/use-overlay-registration";
 import {
+	RAIL_COLLAPSED_MAX_PX,
 	RIGHT_SIDEBAR_MAX_RATIO,
 	RIGHT_SIDEBAR_MIN_PX,
 	SIDEBAR_MAX_RATIO,
@@ -67,7 +68,6 @@ import { getSettings, patchSettings } from "@/lib/settings/react-store";
 import {
 	commitShellRailWidths,
 	RAIL_RECORD_MIN_PX,
-	saveCustomRails,
 } from "@/lib/shell/layout-persist";
 import {
 	openSettingsWindow,
@@ -213,6 +213,7 @@ export default function App() {
 	useExternalFileDrop();
 	// First-vault highlight tour (driver.js) + Settings replay listener.
 	useFeatureTour();
+	const vaultPath = useVaultStore((s) => s.vaultPath);
 	const {
 		sidebarPanelRef,
 		rightSidebarPanelRef,
@@ -225,9 +226,8 @@ export default function App() {
 		initialRightPx,
 		animatingRailRef,
 		cancelRailAnimation,
-	} = useShellLayout();
+	} = useShellLayout(vaultPath);
 
-	const vaultPath = useVaultStore((s) => s.vaultPath);
 	const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
 	const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
 
@@ -406,27 +406,28 @@ export default function App() {
 	});
 
 	// Persist a completed user resize into the active layout's width slot.
-	const commitUserRailWidths = (leftRatio?: number, rightRatio?: number) => {
+	// Ratios are stored as fractions of the window width — the same base
+	// the restore path (railPxFromRatio) uses — so measured panel px map
+	// 1:1 onto the saved values. Sub-threshold px (rails dragged shut)
+	// keep the previously remembered width.
+	const commitUserRailPx = (leftPx?: number, rightPx?: number) => {
+		const ratio = (px?: number) =>
+			px !== undefined && px >= RAIL_RECORD_MIN_PX
+				? px / window.innerWidth
+				: undefined;
 		commitShellRailWidths(
-			{ leftRatio, rightRatio },
+			{ leftRatio: ratio(leftPx), rightRatio: ratio(rightPx) },
 			uiStore.getState().lastAppliedPreset ?? "custom",
 			window.innerWidth,
 		);
 	};
-	// Double-click reset goes through an imperative resize (isUserInteraction
-	// is false), so it needs an explicit write-through on the next frame.
-	const commitCurrentRailWidths = () => {
-		const leftPx = vaultPath
-			? sidebarPanelRef.current?.getSize().inPixels
-			: undefined;
-		const rightPx = rightSidebarPanelRef.current?.getSize().inPixels;
-		commitUserRailWidths(
-			leftPx !== undefined && leftPx >= RAIL_RECORD_MIN_PX
-				? leftPx / window.innerWidth
-				: undefined,
-			rightPx !== undefined && rightPx >= RAIL_RECORD_MIN_PX
-				? rightPx / window.innerWidth
-				: undefined,
+	// Double-click resets the adjacent rail to its session default via an
+	// imperative resize (isUserInteraction stays false), so persist the
+	// known reset target directly instead of racing a DOM read-back.
+	const commitRailReset = (side: "left" | "right") => {
+		commitUserRailPx(
+			side === "left" ? initialLeftPx : undefined,
+			side === "right" ? initialRightPx : undefined,
 		);
 	};
 
@@ -443,24 +444,19 @@ export default function App() {
 					<ResizableGroup
 						orientation="horizontal"
 						className="h-full min-h-0 flex-1 overflow-hidden"
-						onLayoutChanged={(nextLayout, meta) => {
+						onLayoutChanged={(_nextLayout, meta) => {
 							// Only genuine user resizes (drag release / keyboard) update
 							// the remembered widths; mount echoes, window resizes and
 							// programmatic preset applies are filtered out here.
 							if (!meta.isUserInteraction) return;
+							// Entering custom snapshots the rail flags; widths commit
+							// from measured px so save and restore share one base.
 							setLayoutMode("custom");
-							// The arrangement left by the drag is the new custom layout.
-							saveCustomRails({
-								leftCollapsed: uiStore.getState().sidebarCollapsed,
-								rightOpen: uiStore.getState().rightSidebarOpen,
-							});
-							commitUserRailWidths(
-								nextLayout.sidebar !== undefined
-									? nextLayout.sidebar / 100
+							commitUserRailPx(
+								vaultPath
+									? sidebarPanelRef.current?.getSize().inPixels
 									: undefined,
-								nextLayout["right-sidebar"] !== undefined
-									? nextLayout["right-sidebar"] / 100
-									: undefined,
+								rightSidebarPanelRef.current?.getSize().inPixels,
 							);
 						}}
 					>
@@ -486,17 +482,25 @@ export default function App() {
 											return;
 										}
 										// Only mark collapsed after a real collapse, never mid-drag.
-										if (size.inPixels <= 1) setSidebarCollapsedState(true);
-										else if (size.inPixels >= 80) {
+										if (size.inPixels <= RAIL_COLLAPSED_MAX_PX) {
+											setSidebarCollapsedState(true);
+										} else if (size.inPixels >= RAIL_RECORD_MIN_PX) {
 											setSidebarCollapsedState(false);
 											leftWidthPxRef.current = size.inPixels;
 										}
 									}}
 								>
+									{/*
+									  `isolate` (stacking context) separates the rail from the PDF
+									  pane, but a whole-rail `transform-gpu` GPU layer goes
+									  unpainted in WKWebView after paper open / tab switch /
+									  import and only recovers on scroll. Rows use `top`, not
+									  `translateY`, so no compositing layer is needed here.
+									*/}
 									<aside
 										ref={sidebarAsideRef}
 										data-vault-sidebar
-										className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar isolate transform-gpu"
+										className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar isolate"
 									>
 										<VaultSidebar />
 									</aside>
@@ -505,9 +509,7 @@ export default function App() {
 								{sidebarCollapsed ? null : (
 									<ResizableHandle
 										onPointerDown={cancelRailAnimation}
-										onDoubleClick={() =>
-											requestAnimationFrame(commitCurrentRailWidths)
-										}
+										onDoubleClick={() => commitRailReset("left")}
 									/>
 								)}
 							</Fragment>
@@ -540,9 +542,7 @@ export default function App() {
 						{rightSidebarOpen ? (
 							<ResizableHandle
 								onPointerDown={cancelRailAnimation}
-								onDoubleClick={() =>
-									requestAnimationFrame(commitCurrentRailWidths)
-								}
+								onDoubleClick={() => commitRailReset("right")}
 							/>
 						) : null}
 						<ResizablePanel
@@ -563,8 +563,9 @@ export default function App() {
 								) {
 									return;
 								}
-								if (size.inPixels <= 1) setRightSidebarOpenState(false);
-								else if (size.inPixels >= 80) {
+								if (size.inPixels <= RAIL_COLLAPSED_MAX_PX) {
+									setRightSidebarOpenState(false);
+								} else if (size.inPixels >= RAIL_RECORD_MIN_PX) {
 									setRightSidebarOpenState(true);
 									rightWidthPxRef.current = size.inPixels;
 								}

@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	bindZoomGesture,
-	computeCenteredScrollLeft,
-	wheelDeltaToZoomRatio,
-} from "@/lib/pdf/wheel-zoom";
+import { bindZoomGesture, wheelDeltaToZoomRatio } from "@/lib/pdf/wheel-zoom";
 
 /** Records listeners per type and dispatches wheel events to the wheel one. */
 function wheelTargetHarness() {
@@ -295,89 +291,5 @@ describe("PDF wheel delta to zoom ratio", () => {
 	it("zooms in for negative deltas and out for positive ones", () => {
 		expect(wheelDeltaToZoomRatio(-100)).toBeGreaterThan(1);
 		expect(wheelDeltaToZoomRatio(100)).toBeLessThan(1);
-	});
-});
-
-/**
- * `WheelZoomHandler` recenters the visible page horizontally after a zoom step:
- * it adds the page-vs-viewport center mismatch back onto scrollLeft, then
- * clamps to the container's scroll range. EmbedPDF's zoom anchors on the
- * comment-rail-narrowed clientWidth it sees, which biases the page left; this
- * cancels that bias when there is room to scroll.
- */
-describe("computeCenteredScrollLeft", () => {
-	it("decreases scrollLeft when the page center sits left of the viewport center", () => {
-		// page 40px left of the viewport center → scrollLeft drops by 40
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 200,
-				scrollWidth: 1000,
-				clientWidth: 400,
-				pageCenter: 160,
-				viewportCenter: 200,
-			}),
-		).toBe(160);
-	});
-
-	it("increases scrollLeft when the page center sits right of the viewport center", () => {
-		// page 50px right of the viewport center → scrollLeft rises by 50
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 200,
-				scrollWidth: 1000,
-				clientWidth: 400,
-				pageCenter: 250,
-				viewportCenter: 200,
-			}),
-		).toBe(250);
-	});
-
-	it("clamps to 0 and never returns a negative offset", () => {
-		// raw = 10 + (100 − 500) = −390
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 10,
-				scrollWidth: 1000,
-				clientWidth: 400,
-				pageCenter: 100,
-				viewportCenter: 500,
-			}),
-		).toBe(0);
-	});
-
-	it("clamps to scrollWidth - clientWidth and never overshoots", () => {
-		// raw = 580 + (700 − 200) = 1080; max = 1000 − 400 = 600
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 580,
-				scrollWidth: 1000,
-				clientWidth: 400,
-				pageCenter: 700,
-				viewportCenter: 200,
-			}),
-		).toBe(600);
-	});
-
-	it("returns the original scrollLeft when there is no horizontal overflow", () => {
-		// scrollWidth === clientWidth → nothing to recenter
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 37,
-				scrollWidth: 400,
-				clientWidth: 400,
-				pageCenter: 100,
-				viewportCenter: 200,
-			}),
-		).toBe(37);
-		// scrollWidth < clientWidth → still no overflow
-		expect(
-			computeCenteredScrollLeft({
-				scrollLeft: 0,
-				scrollWidth: 300,
-				clientWidth: 400,
-				pageCenter: 100,
-				viewportCenter: 200,
-			}),
-		).toBe(0);
 	});
 });

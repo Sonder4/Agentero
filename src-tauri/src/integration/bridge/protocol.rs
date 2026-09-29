@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub const RELAY_PROTOCOL_VERSION: u8 = 2;
-pub const DEFAULT_RELAY_ENDPOINT: &str = "relay.philfan.cn:443";
+pub const DEFAULT_RELAY_ENDPOINT: &str = "relay.agentero.app:443";
 
 /// Relay connection information embedded in a pairing offer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
@@ -170,19 +170,19 @@ mod tests {
         let endpoint = RelayEndpoint::parse(DEFAULT_RELAY_ENDPOINT).expect("parse endpoint");
         assert_eq!(
             endpoint.websocket_url().as_str(),
-            "wss://relay.philfan.cn/ws"
+            "wss://relay.agentero.app/ws"
         );
         assert_eq!(
             endpoint
                 .connection_url("agt_abcdefghijk", "client", None)
                 .expect("client url")
                 .as_str(),
-            "wss://relay.philfan.cn/ws?v=2&serverId=agt_abcdefghijk&role=client"
+            "wss://relay.agentero.app/ws?v=2&serverId=agt_abcdefghijk&role=client"
         );
     }
 
     #[test]
     fn relay_endpoint_rejects_unexpected_paths() {
-        assert!(RelayEndpoint::parse("relay.philfan.cn:443/other").is_err());
+        assert!(RelayEndpoint::parse("relay.agentero.app:443/other").is_err());
     }
 }

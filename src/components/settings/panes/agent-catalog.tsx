@@ -153,6 +153,7 @@ function catalogTemplateFromId(templateId: string): AgentTemplate {
 		case "hermes":
 		case "claude-acp":
 		case "codex-acp":
+		case "antigravity-acp":
 		case "qodercli":
 		case "grok-build":
 		case "pi":

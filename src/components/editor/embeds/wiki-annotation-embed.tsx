@@ -304,9 +304,9 @@ export const WikiAnnotationEmbed = memo(function WikiAnnotationEmbed({
 						className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
 						aria-hidden
 					/>
-					<span className="min-w-0 whitespace-pre-wrap break-words">
-						{ref.comment.trim()}
-					</span>
+					<MessageResponse className="min-w-0 flex-1 text-sm leading-relaxed [&_p]:my-0">
+						{ref.comment}
+					</MessageResponse>
 				</div>
 			) : null}
 

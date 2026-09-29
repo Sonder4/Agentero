@@ -176,37 +176,3 @@ export function bindZoomGesture({
 		},
 	};
 }
-
-/**
- * Horizontal scroll offset that recenters the active page in the viewport
- * after a zoom commit.
- *
- * EmbedPDF anchors zoom on the `clientWidth` it observes, which has the
- * comment-rail `rightGutter` subtracted (see DockviewViewport.commitResize),
- * so the page lands biased ~`rightGutter / 2` left of the real screen center.
- * This adds the page-vs-viewport center mismatch back onto `scrollLeft` and
- * clamps it to the container's scroll range; only the horizontal offset is
- * touched (scrollTop is preserved).
- *
- * Only call this when `scrollWidth > clientWidth` (a horizontal scrollbar
- * exists); when there is no horizontal overflow there is no room to recenter,
- * so the original `scrollLeft` is returned unchanged.
- */
-export function computeCenteredScrollLeft({
-	scrollLeft,
-	scrollWidth,
-	clientWidth,
-	pageCenter,
-	viewportCenter,
-}: {
-	scrollLeft: number;
-	scrollWidth: number;
-	clientWidth: number;
-	pageCenter: number;
-	viewportCenter: number;
-}): number {
-	const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
-	if (maxScrollLeft <= 0) return scrollLeft;
-	const next = scrollLeft + (pageCenter - viewportCenter);
-	return Math.max(0, Math.min(next, maxScrollLeft));
-}

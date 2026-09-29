@@ -8,7 +8,7 @@ import {
 	GlobalPointerProvider,
 	useInteractionManagerCapability,
 } from "@embedpdf/plugin-interaction-manager/react";
-import { Scroller } from "@embedpdf/plugin-scroll/react";
+import { type PageLayout, Scroller } from "@embedpdf/plugin-scroll/react";
 import { useZoom, ZoomGestureWrapper } from "@embedpdf/plugin-zoom/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { EMPTY_LAYOUT_REGIONS_BY_PAGE } from "@/components/viewer/pdf/constants";
@@ -213,20 +213,12 @@ export function PdfTranslationViewerInner({
 	);
 
 	const renderPage = useCallback(
-		({
-			pageIndex,
-			width,
-			height,
-		}: {
-			pageIndex: number;
-			width: number;
-			height: number;
-		}) => (
+		({ pageIndex, width, height, rotatedWidth, rotatedHeight }: PageLayout) => (
 			<PdfPageLayers
 				docId={docId}
 				pageIndex={pageIndex}
-				width={width}
-				height={height}
+				width={rotatedWidth || width}
+				height={rotatedHeight || height}
 				tone={pdfTone}
 				zoomRef={zoomRef}
 				annotationCap={null}

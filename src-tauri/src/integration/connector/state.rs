@@ -759,8 +759,8 @@ impl ConnectorController {
         let index = app
             .state::<crate::features::vault::rename::WikiIndexState>()
             .handle();
-        let result = crate::features::paper::catalog::commands::paper_move_service(
-            crate::features::paper::catalog::commands::PaperMoveArgs {
+        let result = crate::features::paper::catalog::service::paper_move_service(
+            crate::features::paper::catalog::service::PaperMoveArgs {
                 vault_path: vault_handle.to_string(),
                 from_rel: from.to_string(),
                 dest_parent_rel: parent.to_string(),

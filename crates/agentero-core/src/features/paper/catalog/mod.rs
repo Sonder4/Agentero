@@ -3,6 +3,7 @@
 //! Authoritative store for paper set + structured metadata.
 //! See `docs/backend/catalog.md`.
 
+pub mod move_paper;
 pub mod papers;
 mod schema;
 pub mod sidecar;
@@ -60,7 +61,8 @@ pub fn plan_paper_move_under(
 }
 
 /// Move an item under a new `papers/` parent on disk and rewrite matching
-/// catalog path prefixes. Never overwrites; rejects escapes and moving a
+/// catalog path prefixes and incoming links. Uses a fresh Wiki index with no
+/// in-process dirty editors. Never overwrites; rejects escapes and moving a
 /// folder into itself or its own descendant. Idempotent: returns the
 /// unchanged path when the item is already in the destination folder.
 pub fn move_paper_under(
@@ -68,18 +70,9 @@ pub fn move_paper_under(
     from_rel: &str,
     dest_parent_rel: &str,
 ) -> Result<String, AppError> {
-    let (from, new_rel) = plan_paper_move_under(vault, from_rel, dest_parent_rel)?;
-    if new_rel == from {
-        return Ok(from);
-    }
-    let from_abs = vault.join(&from);
-    let new_abs = vault.join(&new_rel);
-    if let Some(parent) = new_abs.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::rename(&from_abs, &new_abs)?;
-    papers::move_under_path(vault, &from, &new_rel)?;
-    Ok(new_rel)
+    let mut index = crate::features::vault::rename::WikiIndex::default();
+    move_paper::move_with_index(vault, from_rel, dest_parent_rel, &[], &mut index)
+        .map(|result| result.new_rel)
 }
 
 /// Move a paper folder from one vault to another.

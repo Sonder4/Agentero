@@ -84,7 +84,7 @@ PDF 阅读器支持：
 
 PDF 工具栏还有 **全文翻译**（Languages，在视觉批注旁）：依赖版面分析，按阅读顺序分批翻译正文，译文盖在原 bbox 上。页签可只译本页；再点可停止或清除覆盖层。缓存写在 `{paper}/.src/layout-translate.json`，不改 PDF。
 
-在 **Settings → 翻译** 中配置服务与默认语言。官方安装包默认是「Agentero 内置」，不需要填任何 Key；免费服务可能受限流影响，需要稳定结果时优先用内置服务或已登录的 Agent。
+在 **Settings → 翻译** 中配置服务与默认语言。官方安装包默认是「Agentero 内置」，不需要填任何 Key；免费服务可能受限流影响，需要稳定结果时优先用内置服务或已登录的 Agent。使用自备 LLM 翻译时见 [配置 OpenAI 兼容翻译](translate-openai-compatible.md)。
 
 ## 整理 NOTES.md
 

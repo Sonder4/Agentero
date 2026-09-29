@@ -10,6 +10,11 @@
 - 左右栏折叠：`⌥⌘S` / `⌘L`（不重叠）。折叠/展开带 200ms `flex-grow` 过渡（`data-rail-animating`，见 `index.css`）；过渡中拖动分隔条立即接管（可打断）；`prefers-reduced-motion` 下直接切换。
 - **标题栏**：`bg-background/75` + `backdrop-blur-xl` + `backdrop-saturate-150`（`supports-backdrop-blur` 回退更实色；`prefers-reduced-transparency` 下实色无 blur）。macOS 左侧留出避让原生三色按钮的拖拽条（`TrafficLightSpacer`，主窗 / 功能窗 / 文档弹出窗 / 设置窗共用），进入原生全屏（绿灯按钮）后三色按钮隐藏，该条收窄为常规 8px，避免首个控件被顶到 ~92px；进出全屏由 tao 的 resize 事件重新查询 `isFullscreen()`。右侧：更新指示器、窗口布局菜单、Agent 切换；有新版本可更新时显示更新指示器按钮（见 [settings.md](settings.md) 「应用更新」）。布局菜单提供 **Agent**（PDF / Agent `2:1`）、**笔记**（折叠左右侧栏，中间 PDF / Notes）和 **阅读**（仅 PDF）三种预设。预设只调整 panel 宽度并开关当前论文的 Notes / Agent，不关闭其它 PDF tab。
 - **布局宽度记忆**：手动拖拽调整过的左右栏宽度按布局模式记成窗口宽度比例，持久化在 localStorage `agentero.shellLayout.v1`（`layout-persist.ts`）；重进该布局或重启应用都按记忆比例恢复（恢复时按面板 min/max 收窄 clamp，双击分隔条重置也会被记住）。提交走 `ResizableGroup.onLayoutChanged` 且只认 `isUserInteraction`（拖拽释放 / 键盘调整），程序化预设应用、挂载回声与窗口重排不写入；拖到折叠（< 80px）不污染记忆宽度。布局模式本身与折叠态一并持久化，启动时在 `boot()` 经 `initShellLayoutFromPrefs()` 预置，首帧即上次布局。
+  - 手动修改后模式变为 `custom`，但宽度仍归属最近选择的预设；`lastPreset` 一并保存，重启后恢复相同的宽度槽位，后续拖动继续更新该预设。进入 `custom` 时同时快照左右栏折叠态。所有会改变折叠态的入口（`⌥⌘S` / `⌘L`、布局菜单外展开右栏、PDF pin 打开 Agent、聚焦侧栏展开左栏）都同样切到 `custom` 并持久化；功能窗口承接时不影响主窗布局。
+  - 宽度比例统一以窗口宽度为基准（保存用面板实测 px ÷ 窗口宽，恢复按窗口宽 × 比例再 clamp），保存与恢复共用同一基准，双击重置直接提交已知的重置目标。
+  - 切换预设时先更新归属，再应用折叠状态；没有记忆宽度的左右栏使用 200px / 320px 默认值，Agent 预设首次展开右栏仍按阅读区域的 1/3。重新展开时优先按当前窗口宽度换算已保存比例，避免沿用其他预设的宽度或过期像素值。
+  - 左栏随 Vault 有无条件挂载。启动或切换 Vault 后，在面板注册完成的下一帧重新读取当前槽位的保存比例并应用左栏宽度（保留折叠态）；不只依赖 App 首次渲染的 `initialLeftPx` 或面板库内部布局缓存。该程序化恢复不写回用户宽度。
+  - 此处记忆的是左右侧栏；中间 Dockview 保存当前工作区布局；标准 PDF / Notes 双列另以 `agentero.notesSplitRatio.v1` 保存共用比例（跨 Vault），重复选择笔记布局不均分，关闭再打开时按当前可用宽度恢复。已有笔记列、多列、上下分屏与浮动布局保持原排列，不套用双列比例。
 - **默认配色**：冷灰系统材质（侧栏重、内容轻），见 [settings.md](settings.md)「主题」。
 
 实现：`src/components/shell/`、`src/lib/shell/ui-store.ts`、`src/lib/shell/leaf.ts`、`src/lib/shell/feature-window.ts`、`src/lib/shell/layout-persist.ts`、`hooks/use-shell-layout.ts`。

@@ -28,7 +28,7 @@ Agentero 基于 Tauri 2 + React 19，本地优先，Vault 文件与 Catalog SQLi
 |---|---|---|
 | 左侧栏 | 文件树 + Paper Info | 常驻 collapsible，`preserve-pixel-size` |
 | 中间 | Dockview 工作区 | Library / PDF / HTML / 图片 / Markdown / Trash |
-| 右侧栏 | Agent / 批注 / References（引用卡片 + 近邻图）/ Figures | 可选，同样 collapsible |
+| 右侧栏 | Agent（可「移动至新窗口」弹出单例功能窗） | 可选，同样 collapsible |
 
 - **文件树**：顶部虚拟 Recycle Bin、魔棒按钮；`papers/` 根文件夹即论文库入口（`Library` 图标，右键含导出 / 发现引用等库操作）。论文默认是叶子；`{paper}/attachments/` 非空时行上出现 chevron，子项直接挂在论文下。右键新建/删除/在 Finder 中显示/终端打开。多选（⌘/Shift）+ 拖拽移动。详见 [vault-tree.md](frontend/vault-tree.md)。
 - **Dockview**：每个打开文档一个 panel，支持 tab、上下左右分屏、多格网格。布局 `toJSON()` 持久化，path/mode 在 panel params。详见 [workspace.md](frontend/workspace.md)。

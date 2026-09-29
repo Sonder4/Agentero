@@ -36,6 +36,7 @@ export type LibraryColumnKey =
 	| "title"
 	| "authors"
 	| "date"
+	| "addedAt"
 	| "publication"
 	| "tags"
 	| "id"
@@ -45,6 +46,8 @@ export type LibraryColumnKey =
 export type LibraryColumnPref = {
 	key: LibraryColumnKey;
 	visible: boolean;
+	/** User-resized width in rem; omitted columns remain adaptive. */
+	widthRem?: number;
 };
 
 /** Canonical column order (also the source of truth for reconciliation). */
@@ -56,11 +59,12 @@ export const LIBRARY_COLUMN_KEYS: LibraryColumnKey[] = [
 	"tags",
 	"id",
 	"citations",
+	"addedAt",
 ];
 
-/** Default: every column visible, in canonical order. */
+/** Keep the existing layout; users can enable the added-date column. */
 export const DEFAULT_LIBRARY_COLUMNS: LibraryColumnPref[] =
-	LIBRARY_COLUMN_KEYS.map((key) => ({ key, visible: true }));
+	LIBRARY_COLUMN_KEYS.map((key) => ({ key, visible: key !== "addedAt" }));
 
 /**
  * How Agentero responds to agent permission escalations.
@@ -148,6 +152,12 @@ export type AppSettings = {
 	 * `⌘\` / "Open notes" away.
 	 */
 	autoOpenPaperNotes: boolean;
+	/**
+	 * Adopt bare folders created under `papers/` that hold settled PDFs into
+	 * the library in place (rename to the canonical id, NOTES shell, metadata
+	 * recognition). Default **on**.
+	 */
+	autoIngest: boolean;
 	/**
 	 * When opening a new paper, close the active tab instead of adding another one.
 	 * Default **off**; turn on for a single-paper-at-a-time workflow.

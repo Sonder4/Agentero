@@ -130,6 +130,12 @@ export const commands = {
 	 */
 	jobReconcileVault: (args: JobReconcileVaultArgs) => typedError<ApiResult<number>, string>(__TAURI_INVOKE("job_reconcile_vault", { args })),
 	/**
+	 *  Startup reconcile: adopt bare `papers/` child folders (created while the
+	 *  app was closed) into the library. Fire-and-forget from the frontend's
+	 *  `vault:opened` handler; returns the adopted count.
+	 */
+	paperIngestReconcile: (args: PaperIngestReconcileArgs) => typedError<ApiResult<number>, string>(__TAURI_INVOKE("paper_ingest_reconcile", { args })),
+	/**
 	 *  Vault-relative paths of papers still missing local assets, per §8.4 CapsCache
 	 *  (replaces the frontend `collectPapersNeedingAssetDownload` tree walk). A
 	 *  paper needs a download when it has no PDF, or its body is unknown (no
@@ -1275,6 +1281,8 @@ export type AgentTemplate = "opencode" |
  *  Docs: https://github.com/NousResearch/hermes-agent
  */
 "hermes" | "claude-acp" | "codex-acp" | 
+/**  Google Antigravity's official ACP server (separate from the retired `agy-acp` adapter). */
+"antigravity-acp" | 
 /**
  *  Qoder CLI native ACP (`qodercli --acp`).
  *  Docs: https://docs.qoder.com/en/cli/acp
@@ -1453,12 +1461,18 @@ export type AppSettings_Deserialize = {
 	 */
 	autoOpenPaperNotes?: boolean,
 	/**
+	 *  Auto-ingest: adopt bare folders created under `papers/` that hold at
+	 *  least one settled PDF into the library in place (catalog row + NOTES
+	 *  shell + background metadata recognition). Default on.
+	 */
+	autoIngest?: boolean,
+	/**
 	 *  When opening a new paper, close the active tab instead of adding a new one.
 	 *  Default off; useful for users who prefer a single-paper-at-a-time workflow.
 	 */
 	replaceCurrentTabOnOpenPaper?: boolean,
 	autoUpdateInternalLinks?: string,
-	libraryColumns?: LibraryColumnPref[],
+	libraryColumns?: LibraryColumnPref_Deserialize[],
 	connectorEnabled?: boolean,
 	connectorPort?: number,
 	/**  Loopback Streamable HTTP MCP server. Default off. */
@@ -1536,12 +1550,18 @@ export type AppSettings_Serialize = {
 	 */
 	autoOpenPaperNotes: boolean,
 	/**
+	 *  Auto-ingest: adopt bare folders created under `papers/` that hold at
+	 *  least one settled PDF into the library in place (catalog row + NOTES
+	 *  shell + background metadata recognition). Default on.
+	 */
+	autoIngest: boolean,
+	/**
 	 *  When opening a new paper, close the active tab instead of adding a new one.
 	 *  Default off; useful for users who prefer a single-paper-at-a-time workflow.
 	 */
 	replaceCurrentTabOnOpenPaper: boolean,
 	autoUpdateInternalLinks: string,
-	libraryColumns: LibraryColumnPref[],
+	libraryColumns: LibraryColumnPref_Serialize[],
 	connectorEnabled: boolean,
 	connectorPort: number,
 	/**  Loopback Streamable HTTP MCP server. Default off. */
@@ -2721,6 +2741,10 @@ export type ImportLocalPdfArgs = {
 	entries?: LocalPdfImportEntry[],
 	/**  JobCenter job id (task id) for parse-phase `job:progress` events. */
 	taskId?: string | null,
+	/**  Whether to run metadata recognition synchronously before committing the paper. */
+	recognizeSync?: boolean,
+	/**  Optional Translator service URL used for identifier resolution. */
+	translatorBaseUrl?: string | null,
 };
 
 export type ImportLocalPdfResult = ImportLocalPdfResult_Serialize | ImportLocalPdfResult_Deserialize;
@@ -3178,9 +3202,20 @@ export type LibraryCitingScanArgs = {
 };
 
 /**  One column in the papers Library table: array order = display order. */
-export type LibraryColumnPref = {
+export type LibraryColumnPref = LibraryColumnPref_Serialize | LibraryColumnPref_Deserialize;
+
+/**  One column in the papers Library table: array order = display order. */
+export type LibraryColumnPref_Deserialize = {
 	key: string,
 	visible: boolean,
+	widthRem?: number | null,
+};
+
+/**  One column in the papers Library table: array order = display order. */
+export type LibraryColumnPref_Serialize = {
+	key: string,
+	visible: boolean,
+	widthRem?: number | null,
 };
 
 export type LinkFragment = { kind: "heading"; path: string[] } | { kind: "block"; id: string } | 
@@ -3555,6 +3590,10 @@ export type PaperImportResult = {
 };
 
 export type PaperImportedEvent = PaperFactPayload;
+
+export type PaperIngestReconcileArgs = {
+	vaultPath: string,
+};
 
 /**
  *  What identifier the paper was resolved through. Serialized all-lowercase so

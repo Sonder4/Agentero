@@ -1,0 +1,48 @@
+name: Sync release to AtomGit
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      ATOMGIT_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to synchronize (for example v0.11.3)
+        required: true
+        type: string
+  release:
+    types: [published, edited]
+
+permissions:
+  # Listing the still-draft release that the build jobs are populating needs
+  # push access; a read-only token never sees it.
+  contents: write
+
+# Serialize tags too, so a historical backfill cannot race latest promotion.
+# Never interrupt an upload to start a newer run.
+concurrency:
+  group: atomgit-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Synchronize release notes and every uploaded asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
+          ATOMGIT_REPOSITORY: ${{ vars.ATOMGIT_REPOSITORY || 'poco-ai/Agentero' }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: node scripts/sync-atomgit-release.mjs

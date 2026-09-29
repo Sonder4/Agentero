@@ -12,6 +12,7 @@
  */
 import { Award, ListFilter, RefreshCw, Search, X } from "lucide-react";
 import { memo, useEffect, useState } from "react";
+import { LibraryColumnResizeHandle } from "@/components/library/library-column-resize-handle";
 import { COLUMN_META, SortIcon } from "@/components/library/library-columns";
 import type {
 	CellT,
@@ -44,12 +45,13 @@ import { cn } from "@/lib/core/utils";
 import {
 	buildEasyScholarTags,
 	fetchEasyScholarRank,
-	isEasyScholarTag,
+	mergeEasyScholarTags,
 } from "@/lib/easyscholar";
 import type { PaperMetadata } from "@/lib/paper";
-import { setLibraryPaperTags } from "@/lib/paper/library-store";
-import { coercePaperTags, type PaperTag } from "@/lib/paper/tags";
+import { libraryStore, setLibraryPaperTags } from "@/lib/paper/library-store";
+import type { PaperTag } from "@/lib/paper/tags";
 import type { LibraryColumnPref } from "@/lib/settings";
+import { getVaultPath } from "@/lib/vault/store";
 
 type LibraryTableHeaderProps = {
 	t: CellT;
@@ -83,6 +85,7 @@ type LibraryTableHeaderProps = {
 	onToggleColumn: (key: SortKey) => void;
 	onResetColumns: () => void;
 	onColumnReorder: (fromKey: SortKey, toKey: SortKey) => void;
+	onColumnResize: (key: SortKey, width: number | null, commit: boolean) => void;
 	/** Vault path for EasyScholar batch tag fetch. */
 	vaultPath?: string | null;
 	/** Papers currently visible in the library scope. */
@@ -111,6 +114,7 @@ export const LibraryTableHeader = memo(function LibraryTableHeader({
 	onToggleColumn,
 	onResetColumns,
 	onColumnReorder,
+	onColumnResize,
 	vaultPath,
 	papers,
 }: LibraryTableHeaderProps) {
@@ -149,12 +153,17 @@ export const LibraryTableHeader = memo(function LibraryTableHeader({
 						continue;
 					}
 					const newTags = buildEasyScholarTags(title, data);
-					const allTags = coercePaperTags(paper.tags);
-					const base = allTags.filter((tag) => !isEasyScholarTag(tag.name));
-					await setLibraryPaperTags(vaultPath, paper.path, [
-						...base,
-						...newTags,
-					]);
+					// The request may take seconds: merge with edits made while it was in flight.
+					if (getVaultPath() !== vaultPath) break;
+					const current = libraryStore
+						.getState()
+						.papers.find((row) => row.path === paper.path);
+					if (!current) continue;
+					await setLibraryPaperTags(
+						vaultPath,
+						paper.path,
+						mergeEasyScholarTags(current.tags, newTags),
+					);
 					updated += 1;
 				} catch {
 					failed += 1;
@@ -193,7 +202,7 @@ export const LibraryTableHeader = memo(function LibraryTableHeader({
 									key={col.key}
 									className={cn(
 										meta.headerClassName,
-										"p-0 font-medium",
+										"relative p-0 font-medium",
 										dragKey === col.key && "opacity-50",
 										isDragOver && "bg-muted",
 									)}
@@ -208,7 +217,9 @@ export const LibraryTableHeader = memo(function LibraryTableHeader({
 									onDragStart={(e) => {
 										const target = e.target as HTMLElement;
 										if (
-											target.closest("input,button[data-library-header-action]")
+											target.closest(
+												"input,button[data-library-header-action],[data-library-resize]",
+											)
 										) {
 											e.preventDefault();
 											return;
@@ -470,6 +481,16 @@ export const LibraryTableHeader = memo(function LibraryTableHeader({
 											</>
 										) : null}
 									</div>
+									{canCustomizeColumns ? (
+										<LibraryColumnResizeHandle
+											label={t("papersLibrary.resizeColumn", {
+												column: t(meta.labelKey),
+											})}
+											onResize={(width, commit) =>
+												onColumnResize(col.key, width, commit)
+											}
+										/>
+									) : null}
 								</th>
 							);
 						})}

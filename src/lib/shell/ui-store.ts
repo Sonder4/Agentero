@@ -11,6 +11,7 @@ import {
 	getShellLayoutPrefs,
 	saveCustomRails,
 	saveLastMode,
+	saveLastPreset,
 } from "@/lib/shell/layout-persist";
 import {
 	type LayoutPresetMode,
@@ -145,10 +146,19 @@ export function setLayoutMode(layoutMode: LayoutMode): void {
 	if (uiStore.getState().layoutMode === layoutMode) return;
 	uiStore.setState({ layoutMode });
 	saveLastMode(layoutMode);
+	if (layoutMode === "custom") {
+		const state = uiStore.getState();
+		if (state.lastAppliedPreset) saveLastPreset(state.lastAppliedPreset);
+		saveCustomRails({
+			leftCollapsed: state.sidebarCollapsed,
+			rightOpen: state.rightSidebarOpen,
+		});
+	}
 }
 
 export function setLastAppliedPreset(mode: LayoutPresetMode): void {
 	uiStore.setState({ lastAppliedPreset: mode });
+	saveLastPreset(mode);
 }
 
 export function setRightSidebarOpenState(open: boolean): void {
@@ -181,13 +191,12 @@ export function initShellLayoutFromPrefs(): void {
 		});
 		return;
 	}
-	if (prefs.customRails) {
-		uiStore.setState({
-			layoutMode: "custom",
-			sidebarCollapsed: prefs.customRails.leftCollapsed,
-			rightSidebarOpen: prefs.customRails.rightOpen,
-		});
-	}
+	uiStore.setState({
+		layoutMode: "custom",
+		lastAppliedPreset: prefs.lastPreset ?? null,
+		sidebarCollapsed: prefs.customRails?.leftCollapsed ?? false,
+		rightSidebarOpen: prefs.customRails?.rightOpen ?? false,
+	});
 }
 
 export function setRightSidebarTab(tab: RightSidebarTab): void {

@@ -31,7 +31,12 @@ pub async fn scan_remote_agents(
     let destination = session_destination(session.as_ref());
     let mut entries = Vec::new();
 
-    for tmpl in catalog_templates() {
+    // Antigravity's command and arguments vary by platform. This catalog uses
+    // local templates without detecting the remote OS; use a custom agent there.
+    for tmpl in catalog_templates()
+        .into_iter()
+        .filter(|tmpl| tmpl.id != "antigravity-acp")
+    {
         let detect = tmpl
             .detect_command
             .as_deref()

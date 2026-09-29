@@ -39,7 +39,7 @@ import {
 	remoteCacheClear,
 } from "@/lib/vault/remote/remote-vault";
 
-const DEFAULT_RELAY = "relay.philfan.cn";
+const DEFAULT_RELAY = "relay.agentero.app";
 
 export function RemoteAccessPane({ vaultPath }: { vaultPath: string | null }) {
 	const { t } = useTranslation("settings");

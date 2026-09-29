@@ -85,6 +85,9 @@
 		"autoOpenPaperNotes": {
 			"label": "默认打开论文笔记"
 		},
+		"autoIngest": {
+			"label": "自动收录 Papers 下新增的文件夹"
+		},
 		"replaceCurrentTabOnOpenPaper": {
 			"label": "打开新论文时替换当前标签页"
 		},
@@ -441,7 +444,7 @@
 			"deepl": "DeepL 神经机器翻译，使用官方 API Key。",
 			"azure": "微软翻译，使用 Azure 订阅密钥。",
 			"googleCloud": "谷歌云翻译 API，使用服务账号密钥。",
-			"openaiCompatible": "任意兼容 OpenAI 的翻译接口（如 OpenAI、Moonshot、DeepSeek 等）。"
+			"openaiCompatible": "兼容 OpenAI Chat Completions 的接口。填写 Base URL，如 https://api.openai.com/v1；Agentero 会自动追加 /chat/completions。"
 		},
 		"agentId": {
 			"label": "Agent",

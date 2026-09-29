@@ -24,6 +24,7 @@ import {
 import { currentLookupParentDir } from "@/lib/paper/library-actions";
 import {
 	libraryStore,
+	refreshLibrary,
 	setCitingScanDraft,
 	setLibraryIoBusy,
 } from "@/lib/paper/library-store";
@@ -557,6 +558,7 @@ export async function runLocalPdfImportJob(
 	// The user closed the picker: nothing imported, nothing to report.
 	if (!result) return;
 	throwIfTaskCancelled(ctx);
+	await refreshLibrary();
 
 	const merged = result.papers.filter((p) => p.status === "deduped");
 	const created = result.papers.length - merged.length;

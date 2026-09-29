@@ -402,6 +402,18 @@ impl AgentRegistry {
                     a.template.as_str() == info.id
                         || (a.command == info.command && a.args == info.args)
                 });
+                // Antigravity switches between a PATH command and the
+                // Agentero-managed absolute path as its managed copy appears
+                // or disappears. Refresh stale descriptors before probing.
+                if info.id == "antigravity-acp"
+                    && registered.is_some_and(|agent| {
+                        agent.command != info.command || agent.args != info.args
+                    })
+                    && self.ensure_catalog_agent(&info.id, false).is_ok()
+                {
+                    registered_new = true;
+                    continue;
+                }
                 let descriptor_env = registered
                     .map(|agent| agent.env.clone())
                     .unwrap_or_else(|| catalog_env(&info));
@@ -670,9 +682,9 @@ fn migrate_legacy_codex_agents(state: &mut AgentRegistryState) -> bool {
     migrated
 }
 
-/// Google Antigravity (community `agy-acp` adapter) and the legacy Gemini CLI
-/// template were removed: Google ships no official ACP entrypoint. Registrations
-/// may still be on disk, and an unknown template string fails the whole parse
+/// The community `agy-acp` adapter and legacy Gemini CLI template were removed.
+/// The official Antigravity server uses the separate `antigravity-acp` template.
+/// Old registrations may still be on disk; an unknown template fails the whole parse
 /// (`read_state` would fall back to an empty registry, dropping every other
 /// agent), so stale rows are stripped from the raw JSON before deserialization.
 const REMOVED_TEMPLATE_IDS: &[&str] = &["antigravity", "gemini"];
@@ -840,6 +852,7 @@ fn apply_user_agent_to_agent(agent: &mut AgentDescriptor, user_agent: &str, prov
         }
         // Other ACP templates: only AGENTERO_USER_AGENT today (agent may ignore it).
         AgentTemplate::Opencode
+        | AgentTemplate::AntigravityAcp
         | AgentTemplate::QoderCli
         | AgentTemplate::GrokBuild
         | AgentTemplate::OpenClaw
@@ -1105,20 +1118,31 @@ mod tests {
                     "args": [],
                     "env": {},
                     "available": true
+                },
+                {
+                    "id": "catalog-antigravity-acp",
+                    "name": "Antigravity",
+                    "template": "antigravity-acp",
+                    "command": "agy_acp_server.par",
+                    "args": [],
+                    "env": {},
+                    "available": true
                 }
             ]
         });
 
         assert!(strip_removed_templates(&mut value));
         let agents = value["agents"].as_array().expect("agents");
-        assert_eq!(agents.len(), 1);
+        assert_eq!(agents.len(), 2);
         assert_eq!(agents[0]["template"], "pi");
+        assert_eq!(agents[1]["template"], "antigravity-acp");
         assert!(value["default_id"].is_null());
         // Registry still deserializes after the strip.
         let state: AgentRegistryState =
             serde_json::from_value(value.clone()).expect("parse cleaned state");
-        assert_eq!(state.agents.len(), 1);
+        assert_eq!(state.agents.len(), 2);
         assert_eq!(state.agents[0].template, AgentTemplate::Pi);
+        assert_eq!(state.agents[1].template, AgentTemplate::AntigravityAcp);
 
         // Idempotent when nothing else references a removed template.
         value["default_id"] = serde_json::json!("catalog-pi");

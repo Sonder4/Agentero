@@ -45,6 +45,10 @@ mod acp_live {
         assert!(ids.contains(&"codex-acp"));
         assert!(ids.contains(&"hermes"));
         assert!(!ids.contains(&"antigravity"));
+        assert_eq!(
+            ids.contains(&"antigravity-acp"),
+            !cfg!(all(target_os = "macos", target_arch = "x86_64"))
+        );
         assert!(ids.contains(&"qodercli"));
         assert!(ids.contains(&"grok-build"));
         assert!(ids.contains(&"pi"));
@@ -53,6 +57,31 @@ mod acp_live {
         assert!(ids.contains(&"zcode"));
         assert!(ids.contains(&"minimax-code"));
         assert!(!ids.contains(&"custom"));
+    }
+
+    #[test]
+    #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+    fn antigravity_template_uses_the_official_server() {
+        let agent = catalog_templates()
+            .into_iter()
+            .find(|entry| entry.id == "antigravity-acp")
+            .expect("Antigravity template");
+        assert!(agent.command.ends_with(if cfg!(windows) {
+            "agy_acp_server.exe"
+        } else {
+            "agy_acp_server.par"
+        }));
+        assert_eq!(
+            agent.args,
+            if cfg!(target_os = "linux") {
+                vec!["--uid="]
+            } else {
+                vec![]
+            }
+        );
+        // Detect the server itself, not the desktop app or the retired adapter.
+        assert!(agent.detect_command.is_none());
+        assert!(crate::features::agent::registry::lifecycle::supports_lifecycle(&agent.id));
     }
 
     #[test]

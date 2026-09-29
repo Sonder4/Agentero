@@ -1,6 +1,10 @@
 import type { PdfGlyphSlim, PdfPageGeometry } from "@embedpdf/models";
+import type { FormattedSelection } from "@embedpdf/plugin-selection";
 import { describe, expect, it } from "vitest";
-import { buildTightSelectionRects } from "@/lib/pdf/selection-appearance";
+import {
+	buildTightSelectionRects,
+	tightenFormattedSelection,
+} from "@/lib/pdf/selection-appearance";
 
 function glyph(
 	x: number,
@@ -125,5 +129,93 @@ describe("buildTightSelectionRects", () => {
 			{ origin: { x: 11, y: 24 }, size: { width: 42, height: 12 } },
 			{ origin: { x: 121, y: 24 }, size: { width: 14, height: 12 } },
 		]);
+	});
+
+	it("does not merge backward fragments that have large negative gaps", () => {
+		const geometry: PdfPageGeometry = {
+			runs: [
+				{
+					charStart: 0,
+					fontSize: 12,
+					rect: { x: 150, y: 20, width: 24, height: 20 },
+					glyphs: [glyph(150, 20), glyph(158, 20)],
+				},
+				{
+					charStart: 2,
+					fontSize: 12,
+					rect: { x: 20, y: 20, width: 24, height: 20 },
+					glyphs: [glyph(20, 20), glyph(28, 20)],
+				},
+			],
+		};
+
+		expect(
+			buildTightSelectionRects(
+				geometry,
+				{ start: { page: 0, index: 0 }, end: { page: 0, index: 3 } },
+				0,
+			),
+		).toEqual([
+			{ origin: { x: 151, y: 24 }, size: { width: 14, height: 12 } },
+			{ origin: { x: 21, y: 24 }, size: { width: 14, height: 12 } },
+		]);
+	});
+});
+
+describe("tightenFormattedSelection", () => {
+	it("tightens loose formatted selection bounds and updates bounding rect", () => {
+		const rawPages: FormattedSelection[] = [
+			{
+				pageIndex: 0,
+				rect: { origin: { x: 0, y: 0 }, size: { width: 200, height: 100 } },
+				segmentRects: [
+					{ origin: { x: 0, y: 0 }, size: { width: 200, height: 100 } },
+				],
+			},
+		];
+		const geometry: PdfPageGeometry = {
+			runs: [
+				{
+					charStart: 0,
+					fontSize: 12,
+					rect: { x: 10, y: 20, width: 40, height: 20 },
+					glyphs: [glyph(10, 20), glyph(18, 20)],
+				},
+			],
+		};
+
+		const tightened = tightenFormattedSelection(
+			rawPages,
+			{ 0: geometry },
+			{ start: { page: 0, index: 0 }, end: { page: 0, index: 1 } },
+		);
+
+		expect(tightened).toEqual([
+			{
+				pageIndex: 0,
+				rect: { origin: { x: 11, y: 24 }, size: { width: 14, height: 12 } },
+				segmentRects: [
+					{ origin: { x: 11, y: 24 }, size: { width: 14, height: 12 } },
+				],
+			},
+		]);
+	});
+
+	it("preserves raw pages when geometry is unavailable", () => {
+		const rawPages: FormattedSelection[] = [
+			{
+				pageIndex: 0,
+				rect: { origin: { x: 0, y: 0 }, size: { width: 100, height: 50 } },
+				segmentRects: [
+					{ origin: { x: 0, y: 0 }, size: { width: 100, height: 50 } },
+				],
+			},
+		];
+		expect(
+			tightenFormattedSelection(rawPages, undefined, {
+				start: { page: 0, index: 0 },
+				end: { page: 0, index: 1 },
+			}),
+		).toEqual(rawPages);
 	});
 });
