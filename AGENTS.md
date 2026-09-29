@@ -35,6 +35,13 @@ Agentero 是一个基于 Tauri 2 + React 19 的本地优先科研工作台。Vau
 - 如果库当中有对应的 issue，则在提交信息中引用（如 `Fix #123`）；解决了该 issue 则关闭；部分解决则在 issue 区评论。
 - 解决 Issue 之后，把解决的方法评论在 issue 中
 
+## GitHub
+
+- 上游仓库是 `poco-ai/Agentero`，保留为 `origin`，不要直接推送。
+- 本机开发提交推送到 fork：`https://github.com/Sonder4/Agentero`。远程名使用 `fork`。
+- 推送命令是 `git push fork main`。没有 `fork` 远程时，先执行 `git remote add fork https://github.com/Sonder4/Agentero.git`。
+- 不要把 `.cargo/`、`cmake/` 等本地工具目录提交或推送。
+
 ## 常用命令
 
 ```bash
