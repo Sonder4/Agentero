@@ -13,7 +13,7 @@ Agentero 的 Web AI 集成位于 `features/web_ai`，与普通论文网页代理
 
 每个 WebView 使用随机 nonce 和 provider origin 白名单。Host 只注入有限的 `appendText`、打开文件入口和附件确认接口；页面事件必须同时通过 WebView provider、nonce、事件类型和 64 KiB 大小校验。页面不能调用 `__TAURI_INTERNALS__`，也不能继承主窗口的文件系统、Shell、Dialog、Vault 或 MCP 权限。
 
-文本追加使用 provider registry 中的 composer 选择器，只追加草稿，并且要在输入框里读回这段文字才算 `draftReady`。ChatGPT 和 Gemini 的 PDF 由 Windows WebView2 的 `DOM.setFileInputFiles` 写入真实路径；脚本伪造的 `DataTransfer` 不再使用。`attachmentReady` 只在页面正文出现该文件名时为真。写入失败或 WebView 未打开时返回 `manualFile`，scratch 文件保留给用户手动选择；确认后才清理。DeepSeek、Kimi、GLM 不接收 PDF。结果里的 `requiresSend` 永远为 `true`，注入脚本不点击发送按钮。
+文本追加使用 provider registry 中的 composer 选择器，只追加草稿，并且要在输入框里读回这段文字才算 `draftReady`。ChatGPT 和 Gemini 的 PDF 由 Windows WebView2 的 `DOM.setFileInputFiles` 写入真实路径；脚本伪造的 `DataTransfer` 不再使用。调试协议回调与调用方同在 UI 线程，等待期间必须继续分发窗口消息，否则 8 秒后返回 `provider page did not answer`。`attachmentReady` 只在页面正文出现该文件名时为真。写入失败或 WebView 未打开时返回 `manualFile`，scratch 文件保留给用户手动选择；确认后才清理。DeepSeek、Kimi、GLM 不接收 PDF。结果里的 `requiresSend` 永远为 `true`，注入脚本不点击发送按钮。
 
 PDF 选区菜单把当前选中文本和当前论文 PDF 一起交给已打开的 ChatGPT 或 Gemini；都没打开时默认 ChatGPT。它不自动绑定论文，也不自动发送。
 
