@@ -751,14 +751,23 @@ async fn spawn_pdf_worker_with_dir(
         }
     };
 
-    let bytes = fs::read(&response_path).map_err(|error| {
-        let tail = worker_stderr_tail(&stderr_path)
-            .map(|tail| format!(": {tail}"))
-            .unwrap_or_default();
-        AppError::message(format!(
-            "isolated PDF parser produced no response ({status}, {error}){tail}"
-        ))
-    })?;
+    let bytes = match fs::read(&response_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let tail = worker_stderr_tail(&stderr_path)
+                .map(|tail| format!(": {tail}"))
+                .unwrap_or_default();
+            log::warn!(
+                target: "agentero::pdf_parse",
+                "isolated worker produced no response status={status} io={error} dir={} stderr={}",
+                worker_dir.display(),
+                tail.trim_start_matches(": ")
+            );
+            return Err(AppError::message(format!(
+                "isolated PDF parser produced no response ({status}, {error}){tail}"
+            )));
+        }
+    };
     Ok((bytes, dir_guard))
 }
 
