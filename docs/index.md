@@ -25,6 +25,7 @@ Agentero 是一个基于 Tauri 2 + React 19 的本地优先科研工作台。
 - [魔棒入库与 Identifier Lookup](backend/identifier-lookup.md)
 - [论文入库](backend/paper-import.md)
 - [Catalog](backend/catalog.md)
+- [论文编号与文件夹命名](paper-id-naming.md)
 - [Agent Host](backend/agent.md)
 - [Dockview 工作区](frontend/workspace.md)
 - [PDF 阅读与划词](frontend/pdf.md)
