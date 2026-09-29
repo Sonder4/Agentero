@@ -17,6 +17,9 @@
 		"remoteMode": "Remote mode",
 		"jumpBack": "Jump back",
 		"importToLibrary": "Import to library",
+		"smartHighlight": "Smart highlight",
+		"smartHighlightFailed": "Smart highlight failed",
+		"jevNoReadableText": "PDF text layer is empty or unreadable. Run Parse Body (Tools → Parse PDF body) to OCR the paper first.",
 		"findPlaceholder": "Find in document",
 		"findPrev": "Previous match",
 		"findNext": "Next match",
@@ -54,6 +57,15 @@
 		"translation": {
 			"title": "Translation",
 			"tabTitle": "Translation – {{title}}"
+		},
+		"latexTranslation": {
+			"desktopOnly": "LaTeX translation is only available in the desktop app.",
+			"noSource": "This paper has no local LaTeX source to translate.",
+			"missingPaperPath": "Paper path is missing; cannot start LaTeX translation.",
+			"translating": "Translating LaTeX source…",
+			"compiling": "Compiling translated LaTeX…",
+			"compileFailed": "Failed to compile the translated LaTeX. Check that a TeX engine is installed.",
+			"tabTitle": "LaTeX Translation"
 		}
 	},
 	"pdfAsk": {

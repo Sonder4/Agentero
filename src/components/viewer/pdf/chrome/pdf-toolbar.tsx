@@ -1,5 +1,12 @@
 import type { PdfEngine } from "@embedpdf/models";
-import { Clock, Languages, Library, Loader2, ScanSearch } from "lucide-react";
+import {
+	Clock,
+	Highlighter,
+	Languages,
+	Library,
+	Loader2,
+	ScanSearch,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -29,6 +36,10 @@ type PdfToolbarProps = {
 		error: number;
 	};
 	onToggleLayoutTranslate: () => void;
+	/** True while jEV smart highlights are being generated. */
+	smartHighlightBusy?: boolean;
+	/** Trigger jEV smart highlighting for the current paper. */
+	onSmartHighlight?: () => void;
 	/** True when viewing a remote paper that has no local sidecar. */
 	isRemotePaper?: boolean;
 	/** Import the remote paper into the current vault. */
@@ -49,6 +60,8 @@ export function PdfToolbar({
 	layoutTranslateLabel,
 	layoutTranslateProgress,
 	onToggleLayoutTranslate,
+	smartHighlightBusy = false,
+	onSmartHighlight,
 	isRemotePaper = false,
 	onImportToLibrary,
 	importBusy = false,
@@ -266,6 +279,30 @@ export function PdfToolbar({
 								<span className="ml-2 text-background/70">
 									{formatShortcutById("layoutTranslate")}
 								</span>
+							</TooltipContent>
+						</Tooltip>
+					) : null}
+					{!isRemotePaper && onSmartHighlight ? (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									size="icon-xs"
+									variant="ghost"
+									className="shrink-0 self-center"
+									aria-label={t("pdf.smartHighlight")}
+									disabled={!engine || smartHighlightBusy}
+									onClick={onSmartHighlight}
+								>
+									{smartHighlightBusy ? (
+										<Loader2 className="size-3.5 animate-spin" aria-hidden />
+									) : (
+										<Highlighter className="size-3.5" aria-hidden />
+									)}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent side="bottom">
+								{t("pdf.smartHighlight")}
 							</TooltipContent>
 						</Tooltip>
 					) : null}

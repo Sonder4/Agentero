@@ -437,7 +437,7 @@ export function TranslatePane({
 					/>
 				</SettingsRow>
 				<SettingsRow
-					label={t("translate.dualPane.label")}
+					label={t("translate.displayMode.label")}
 					htmlFor="translate-dual-pane"
 				>
 					<Switch

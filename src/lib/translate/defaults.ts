@@ -26,6 +26,8 @@ export const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
 	autoTranslateSelection: false,
 	dualPaneTranslate: false,
 	layoutTranslateConcurrency: DEFAULT_LAYOUT_TRANSLATE_CONCURRENCY,
+	displayMode: "overlay",
+	dualPaneSource: "pdf",
 	agentId: "",
 	modelId: "",
 	customPrompt: "",

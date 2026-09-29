@@ -49,6 +49,7 @@ pub enum JobKind {
     LibraryIo,
     MetadataRefresh,
     LatexCompile,
+    JevSmartHighlights,
 }
 
 impl JobKind {
@@ -74,6 +75,7 @@ impl JobKind {
             JobKind::LibraryIo => "libraryIo",
             JobKind::MetadataRefresh => "metadataRefresh",
             JobKind::LatexCompile => "latexCompile",
+            JobKind::JevSmartHighlights => "jevSmartHighlights",
         };
         // ParseRefs always runs with online lookup enabled; the segment is
         // kept for fingerprint compatibility with pre-refactor jobs.
@@ -471,6 +473,10 @@ fn kind_concurrency(inner: &JobCenterInner, kind: JobKind) -> usize {
         // One latexmk build at a time: TeX runs are CPU-heavy and the compile
         // button is interactive, so a second file waits instead of competing.
         JobKind::LatexCompile => 1,
+        // jEV smart highlights issue one network request per batch; keep one
+        // paper at a time to avoid hammering the API and to keep progress
+        // meaningful.
+        JobKind::JevSmartHighlights => 1,
         JobKind::PageCount | JobKind::WikiReindex => usize::MAX,
     }
 }
@@ -871,6 +877,26 @@ impl JobCenter {
             force,
             None,
             params,
+        )
+        .await
+    }
+
+    /// Enqueue a jEV smart-highlight pass for one paper.
+    pub async fn enqueue_jev_smart_highlights(
+        &self,
+        vault: impl Into<PathBuf>,
+        path: impl Into<String>,
+        lane: JobLane,
+        force: bool,
+    ) -> JobSnapshot {
+        self.enqueue_core(
+            JobKind::JevSmartHighlights,
+            vault,
+            path,
+            lane,
+            force,
+            None,
+            None,
         )
         .await
     }

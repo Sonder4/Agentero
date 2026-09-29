@@ -2,6 +2,7 @@ import {
 	Bot,
 	CloudUpload,
 	Compass,
+	FlaskConical,
 	Info,
 	Keyboard,
 	Languages,
@@ -58,6 +59,7 @@ const PANE_LOADERS = {
 	agent: () => import("@/components/settings/panes/agent-pane"),
 	translate: () => import("@/components/settings/panes/translate-pane"),
 	layout: () => import("@/components/settings/panes/layout-pane"),
+	experimental: () => import("@/components/settings/panes/experimental-pane"),
 	doctor: () => import("@/components/settings/panes/doctor-pane"),
 	keyboard: () => import("@/components/settings/panes/keyboard-pane"),
 	"remote-access": () =>
@@ -101,6 +103,13 @@ const TranslatePane = memo(
 const LayoutPane = memo(
 	lazy(() => PANE_LOADERS.layout().then((m) => ({ default: m.LayoutPane }))),
 );
+const ExperimentalPane = memo(
+	lazy(() =>
+		PANE_LOADERS.experimental().then((m) => ({
+			default: m.ExperimentalPane,
+		})),
+	),
+);
 const DoctorPane = memo(
 	lazy(() => PANE_LOADERS.doctor().then((m) => ({ default: m.DoctorPane }))),
 );
@@ -135,6 +144,7 @@ const NAV: {
 	{ id: "layout", icon: LayoutTemplate },
 	{ id: "remote-access", icon: MonitorSmartphone },
 	{ id: "sync", icon: CloudUpload },
+	{ id: "experimental", icon: FlaskConical },
 	{ id: "doctor", icon: Stethoscope, dividerBefore: true },
 	{ id: "keyboard", icon: Keyboard },
 	{ id: "about", icon: Info },
@@ -582,6 +592,17 @@ export function SettingsContent({
 						>
 							<Suspense fallback={<PaneFallback />}>
 								<SyncPane vaultPath={vaultPath} />
+							</Suspense>
+						</div>
+					)}
+					{visitedSections.includes("experimental") && (
+						<div
+							data-settings-pane
+							data-active={section === "experimental" ? "true" : "false"}
+							hidden={section !== "experimental"}
+						>
+							<Suspense fallback={<PaneFallback />}>
+								<ExperimentalPane settings={settings} patch={patch} />
 							</Suspense>
 						</div>
 					)}

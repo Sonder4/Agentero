@@ -2,6 +2,7 @@ import { DEFAULT_LAYOUT_SETTINGS } from "@/lib/pdf/layout/settings";
 import type {
 	AppSettings,
 	EmbeddingSettings,
+	JevSettings,
 	PdfAskSettings,
 } from "@/lib/settings/types";
 import { DEFAULT_LIBRARY_COLUMNS } from "@/lib/settings/types";
@@ -18,6 +19,14 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
 	baseUrl: "",
 	apiKey: "",
 	model: "",
+};
+
+/** Default TypeSafe jEV (System One) endpoint. */
+export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai/v1/systemone";
+
+export const DEFAULT_JEV_SETTINGS: JevSettings = {
+	apiKey: "",
+	baseUrl: DEFAULT_JEV_BASE_URL,
 };
 
 /** Default Translator Runtime endpoint (overridable in Settings). */
@@ -106,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	embedding: { ...DEFAULT_EMBEDDING_SETTINGS },
 	translate: { ...DEFAULT_TRANSLATE_SETTINGS },
 	layout: { ...DEFAULT_LAYOUT_SETTINGS, providerConfigs: {} },
+	jev: { ...DEFAULT_JEV_SETTINGS },
 };
 
 /** Snap an arbitrary scale value to the closest supported preset. */

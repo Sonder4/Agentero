@@ -235,6 +235,7 @@
 		"pdfParse": "解析 PDF 正文",
 		"parseRefs": "解析参考文献",
 		"latexCompile": "编译 LaTeX",
+		"jevSmartHighlights": "jEV 智能高亮",
 		"downloadBytes": "{{phase}} · {{downloaded}} / {{total}}",
 		"downloadBytesUnknown": "{{phase}} · {{downloaded}}",
 		"batchProgress": "{{phase}} · {{current}} / {{total}}",

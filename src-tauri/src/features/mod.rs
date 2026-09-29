@@ -23,6 +23,8 @@ pub mod lifecycle;
 #[path = "../app/open_request/mod.rs"]
 pub mod open_request;
 
+#[cfg(feature = "desktop")]
+pub mod jev;
 pub mod markdown;
 pub mod paper;
 pub mod pdf;

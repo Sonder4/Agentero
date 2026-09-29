@@ -460,6 +460,22 @@ pub async fn job_download_assets_enqueue(
     .await)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn job_jev_smart_highlights_enqueue(
+    app: tauri::AppHandle,
+    center: State<'_, JobCenter>,
+    args: JobEnqueueArgs,
+) -> Result<ApiResult<JobSnapshot>, String> {
+    let (vault, path) = try_job_paper!(args);
+    Ok(start_enqueued(
+        &app,
+        &center,
+        center.enqueue_jev_smart_highlights(&vault, &path, parse_lane(args.lane), args.force),
+    )
+    .await)
+}
+
 #[derive(Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct JobImportEnqueueArgs {

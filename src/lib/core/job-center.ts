@@ -183,6 +183,7 @@ const PROJECTED_JOB_KINDS: ReadonlySet<JobKind> = new Set([
 	"libraryIo",
 	"metadataRefresh",
 	"latexCompile",
+	"jevSmartHighlights",
 ]);
 
 /**
@@ -207,6 +208,7 @@ function jobRowIcon(job: JobChangedSnapshot): BackgroundTaskIcon | undefined {
 	if (job.kind === "libraryIo") {
 		return jobParams(job.params).op === "export" ? "package" : "fileUp";
 	}
+	if (job.kind === "jevSmartHighlights") return "search";
 	return undefined;
 }
 
@@ -263,6 +265,8 @@ function jobPanelTitle(job: JobChangedSnapshot): string {
 				: i18n.t("app:tasks.libraryImport");
 		case "latexCompile":
 			return i18n.t("app:tasks.latexCompile");
+		case "jevSmartHighlights":
+			return i18n.t("app:tasks.jevSmartHighlights");
 		default:
 			return i18n.t("app:tasks.layoutAnalysis");
 	}

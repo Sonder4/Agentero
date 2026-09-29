@@ -10,6 +10,7 @@
 		"agent": "Agent",
 		"translate": "Translate",
 		"layout": "Layout",
+		"experimental": "Experimental",
 		"doctor": "Doctor",
 		"keyboard": "Keyboard",
 		"remote-access": "Remote access",
@@ -412,8 +413,15 @@
 		"autoSelection": {
 			"label": "Auto-translate PDF selection"
 		},
-		"dualPane": {
-			"label": "Open rendered translation in a side window"
+		"displayMode": {
+			"label": "Translation display mode",
+			"overlay": "Overlay on original PDF",
+			"dualPane": "Dual pane"
+		},
+		"dualPaneSource": {
+			"label": "Dual pane source",
+			"pdf": "PDF layout translation",
+			"latex": "Translated LaTeX source"
 		},
 		"layoutConcurrency": {
 			"label": "PDF full-text translation concurrency",
@@ -544,6 +552,27 @@
 				"clearTitle": "Clear parse results?",
 				"reparseTitle": "Clear and reparse?",
 				"scopeLabel": "Choose scope"
+			}
+		}
+	},
+	"experimental": {
+		"title": "Experimental features",
+		"jev": {
+			"section": "TypeSafe jEV smart highlights",
+			"apiKey": {
+				"label": "API key",
+				"placeholder": "jEV API key"
+			},
+			"baseUrl": {
+				"label": "Endpoint URL"
+			},
+			"test": "Test connection",
+			"probeStatus": {
+				"idle": "Not tested yet",
+				"probing": "Testing…",
+				"ok": "Reachable",
+				"failed": "Unreachable",
+				"unconfigured": "API key required"
 			}
 		}
 	},

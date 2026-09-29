@@ -300,6 +300,19 @@ export type AppSettings = {
 	translate: TranslateSettings;
 	/** PDF layout-analysis backend (local ONNX or remote PP-StructureV3). */
 	layout: LayoutSettings;
+	/**
+	 * TypeSafe jEV (System One) credentials for smart paper highlighting.
+	 * Empty API key disables the feature.
+	 */
+	jev: JevSettings;
+};
+
+/** TypeSafe jEV (System One) credentials. */
+export type JevSettings = {
+	/** jEV API key; masked (`*`) when echoed back from the Host. */
+	apiKey: string;
+	/** jEV base URL, e.g. `https://api.typesafe.ai/v1/systemone`. */
+	baseUrl: string;
 };
 
 /** PDF selection Ask (question popover) agent/model prefs. */

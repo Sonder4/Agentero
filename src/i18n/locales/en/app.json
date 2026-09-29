@@ -235,6 +235,7 @@
 		"pdfParse": "Parse PDF body",
 		"parseRefs": "Parse references",
 		"latexCompile": "Compile LaTeX",
+		"jevSmartHighlights": "jEV smart highlights",
 		"downloadBytes": "{{phase}} · {{downloaded}} / {{total}}",
 		"downloadBytesUnknown": "{{phase}} · {{downloaded}}",
 		"batchProgress": "{{phase}} · {{current}} / {{total}}",
