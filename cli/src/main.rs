@@ -395,7 +395,7 @@ async fn run(command: Commands, globals: &GlobalOpts) -> Result<serde_json::Valu
         Commands::Import { cmd } => commands::import::run(cmd, globals).await,
         Commands::Export { cmd } => commands::export::run(cmd, globals).await,
         Commands::Doctor { cmd } => commands::doctor::run(cmd, globals),
-        Commands::Layout { cmd } => commands::layout::run(cmd, globals),
+        Commands::Layout { cmd } => commands::layout::run(cmd, globals).await,
         Commands::Mark { cmd } => commands::mark::run(cmd, globals).await,
         Commands::Translate {
             text,

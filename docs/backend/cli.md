@@ -22,7 +22,7 @@ Headless Vault / Catalog / Wiki 接口；**不含** BYOA / paper-reader。
 | `import` | 标识符入库 |
 | `export` | 导出 |
 | `doctor` | Vault 结构与 Catalog 诊断；含 wikilink 检查与 aliases / 视觉批注 / catalog 去重修复 |
-| `layout` | 侧栏同构版面索引：`list` / `get`（figure / table / algorithm / formula / section） |
+| `layout` | 侧栏同构版面索引：`list` / `get`；整库版面解析 `analyze` 与全文翻译 `translate` |
 | `mark` | 阅读标注：`list` / `get` / `add`（`--quote` 文字锚点或 `--region` 区域锚点）/ `update` / `delete` |
 | `translate` | 免费机器翻译纯文本（无需 API Key，不读桌面 settings） |
 
@@ -71,7 +71,24 @@ Mark id 是 nanoid，字母表含 `-`，约 1/64 的 id 以 `-` 开头。`mark g
 | `image` / `chart` / `table` / `algorithm` / `formula` | 精确 kind |
 | `section` | 章节 / 段落标题，实时从 `source/layout.json` 的 `kind=header` 区域合并 |
 
-无 `layout-index.json` 时返回 `layout_index_missing`（提示先在 App 打开论文跑版面分析）。
+无 `layout-index.json` 时返回 `layout_index_missing`（先跑 `layout analyze`，或在 App 里打开论文跑版面分析）。
+
+### 整库版面解析与全文翻译
+
+`layout analyze` 用 PDFium 文字层按阅读顺序抽出正文 / 标题 / 图题块，写入桌面同一套 sidecar：`{paper}/source/layout.json` 与 `{paper}/.src/layout-index.json`。已有 sidecar 默认复用，`--force` 才重写。这是文字层重建，不跑桌面 WebView 里的 PP-DocLayoutV3；扫描版页面没有文字层时该页为空。
+
+`layout translate` 先确保版面 sidecar 存在，再把正文、摘要、标题、图题翻译进 `{paper}/.src/layout-translate.json`（与阅读器全文翻译同一 schema）。缓存按 provider / 语言 / 原文命中；`--force` 忽略旧译文。默认引擎是免费的 `tencenttransmart`，不读取桌面 settings 里的商业 Key。
+
+```bash
+# 省略论文参数 = Catalog 里的全部论文
+agentero layout analyze --json
+agentero layout analyze papers/demo --force --json
+
+agentero layout translate --to zh-CN --json
+agentero layout translate papers/demo --provider deeplx --json
+```
+
+大批量任务会按论文顺序请求翻译服务，中途失败的论文会让命令以该篇错误退出，已写完的 sidecar 保留。
 
 ### 文字高亮 / 批注 / 翻译（已实现）
 

@@ -4,9 +4,12 @@ use crate::error::CliError;
 use crate::output::to_value;
 use crate::resolve::{resolve_paper, resolve_vault, GlobalOpts};
 use crate::style::{format_table, truncate_chars};
+use agentero_core::features::catalog::papers;
 use agentero_core::features::layout_index::{self, LayoutIndexItem};
+use agentero_core::features::pdf::{layout_text, layout_translate};
 use clap::{Subcommand, ValueHint};
 use serde_json::{json, Value};
+use std::path::Path;
 
 #[derive(Debug, Subcommand)]
 pub enum LayoutCmd {
@@ -35,9 +38,43 @@ pub enum LayoutCmd {
         /// Region id (e.g. figure-3).
         id: String,
     },
+    /// Extract reading-order layout blocks from each paper PDF.
+    ///
+    /// Writes `{paper}/source/layout.json` and `{paper}/.src/layout-index.json`.
+    /// Existing sidecars are reused unless `--force` is set. Omit the paper ref
+    /// to process every catalog paper that has a local PDF.
+    Analyze {
+        /// Vault-relative paper path or id. Omit for the whole vault.
+        #[arg(value_hint = ValueHint::DirPath)]
+        r#ref: Option<String>,
+        /// Rewrite sidecars even when they already exist.
+        #[arg(long = "force")]
+        force: bool,
+    },
+    /// Translate layout body text into `{paper}/.src/layout-translate.json`.
+    ///
+    /// Runs `layout analyze` first when the layout sidecar is missing. Omit the
+    /// paper ref to translate every catalog paper that has a local PDF.
+    Translate {
+        /// Vault-relative paper path or id. Omit for the whole vault.
+        #[arg(value_hint = ValueHint::DirPath)]
+        r#ref: Option<String>,
+        /// Target language (default zh-CN).
+        #[arg(long = "to", value_name = "LANG", default_value = "zh-CN")]
+        to: String,
+        /// Source language (default auto).
+        #[arg(long = "from", value_name = "LANG", default_value = "auto")]
+        from: String,
+        /// Free translation engine (default tencenttransmart).
+        #[arg(long = "provider", value_name = "ID")]
+        provider: Option<String>,
+        /// Ignore an existing translation sidecar.
+        #[arg(long = "force")]
+        force: bool,
+    },
 }
 
-pub fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError> {
+pub async fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError> {
     match cmd {
         LayoutCmd::List {
             r#ref,
@@ -45,6 +82,24 @@ pub fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError> {
             min_score,
         } => list(globals, &r#ref, &kinds, min_score),
         LayoutCmd::Get { r#ref, id } => get(globals, &r#ref, &id),
+        LayoutCmd::Analyze { r#ref, force } => analyze(globals, r#ref.as_deref(), force).await,
+        LayoutCmd::Translate {
+            r#ref,
+            to,
+            from,
+            provider,
+            force,
+        } => {
+            translate(
+                globals,
+                r#ref.as_deref(),
+                &to,
+                &from,
+                provider.as_deref(),
+                force,
+            )
+            .await
+        }
     }
 }
 
@@ -115,6 +170,124 @@ fn get(globals: &GlobalOpts, ref_: &str, id: &str) -> Result<Value, CliError> {
         obj.insert("lines".into(), json!(lines));
     }
     Ok(out)
+}
+
+async fn analyze(
+    globals: &GlobalOpts,
+    paper_ref: Option<&str>,
+    force: bool,
+) -> Result<Value, CliError> {
+    let vault = resolve_vault(globals)?;
+    let papers = target_papers(&vault, paper_ref, globals)?;
+    let mut rows = Vec::new();
+    let mut analyzed = 0usize;
+    let mut cached = 0usize;
+    let mut skipped = 0usize;
+    for paper in &papers {
+        match layout_text::analyze_paper_dir(&vault, &paper.path, force) {
+            Ok(Some(outcome)) => {
+                if outcome.from_cache {
+                    cached += 1;
+                } else {
+                    analyzed += 1;
+                }
+                rows.push(outcome);
+            }
+            Ok(None) => skipped += 1,
+            Err(err) => {
+                return Err(CliError::message(format!("{}: {err}", paper.path)));
+            }
+        }
+    }
+    let mut out = json!({
+        "analyzed": analyzed,
+        "cached": cached,
+        "skipped": skipped,
+        "papers": rows,
+    });
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert(
+            "lines".into(),
+            json!([format!(
+                "{} analyzed={analyzed} cached={cached} skipped={skipped}",
+                globals.style.ok("layout")
+            )]),
+        );
+    }
+    Ok(out)
+}
+
+async fn translate(
+    globals: &GlobalOpts,
+    paper_ref: Option<&str>,
+    target: &str,
+    source: &str,
+    provider: Option<&str>,
+    force: bool,
+) -> Result<Value, CliError> {
+    let vault = resolve_vault(globals)?;
+    let papers = target_papers(&vault, paper_ref, globals)?;
+    let mut rows = Vec::new();
+    let mut translated = 0usize;
+    let mut failed_items = 0usize;
+    let mut skipped = 0usize;
+    let mut errors = Vec::new();
+    for paper in &papers {
+        if let Err(err) = layout_text::analyze_paper_dir(&vault, &paper.path, false) {
+            errors.push(json!({ "path": paper.path, "error": err.to_string() }));
+            continue;
+        }
+        match layout_translate::translate_paper_dir(
+            &vault,
+            &paper.path,
+            target,
+            source,
+            provider,
+            force,
+        )
+        .await
+        {
+            Ok(Some(outcome)) => {
+                translated += outcome.translated;
+                failed_items += outcome.failed;
+                rows.push(outcome);
+            }
+            Ok(None) => skipped += 1,
+            Err(err) => errors.push(json!({ "path": paper.path, "error": err.to_string() })),
+        }
+    }
+    let mut out = json!({
+        "papers": rows.len(),
+        "translated": translated,
+        "failed": failed_items,
+        "skipped": skipped,
+        "errors": errors,
+        "targetLang": target,
+        "items": rows,
+    });
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert(
+            "lines".into(),
+            json!([format!(
+                "{} papers={} translated={translated} failed={failed_items} skipped={skipped} errors={}",
+                globals.style.ok("translate"),
+                rows.len(),
+                errors.len()
+            )]),
+        );
+    }
+    Ok(out)
+}
+
+fn target_papers(
+    vault: &Path,
+    paper_ref: Option<&str>,
+    globals: &GlobalOpts,
+) -> Result<Vec<papers::PaperRecord>, CliError> {
+    if let Some(paper_ref) = paper_ref {
+        return Ok(vec![resolve_paper(vault, paper_ref, globals)?]);
+    }
+    Ok(papers::list_all(vault)?)
 }
 
 /// Shared by `mark add --region`.
