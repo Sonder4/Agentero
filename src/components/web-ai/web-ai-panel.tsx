@@ -6,6 +6,7 @@ import {
 	type WebAiStatus,
 } from "@/lib/core/bindings";
 import { callApiResult } from "@/lib/core/ipc";
+import { notifyError } from "@/lib/core/notify";
 import { isMobileApp, isTauri } from "@/lib/core/tauri";
 import { cn } from "@/lib/core/utils";
 
@@ -116,14 +117,19 @@ export function WebAiPanel() {
 		if (!text.trim()) return;
 		setError(null);
 		try {
-			await callApiResult(() =>
+			const result = await callApiResult(() =>
 				commands.webAiTransferText({
 					providerId,
 					text,
 					paperId: null,
 					page: null,
+					pdfPath: null,
 				}),
 			);
+			if (!result.draftReady) {
+				notifyError(result.message ?? t("webAi.prepare"));
+				return;
+			}
 			setText("");
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));

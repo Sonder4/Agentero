@@ -6,14 +6,11 @@ use super::providers;
 use super::view::{profile_dir, WebAiBounds};
 use agentero_core::features::web_ai::PreparedAttachment;
 use agentero_core::features::web_ai::WebAiStore;
-use base64::Engine;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, Webview, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder, Wry,
+    WebviewWindow, WebviewWindowBuilder, Window, Wry,
 };
 use url::Url;
 use uuid::Uuid;
@@ -50,8 +47,17 @@ impl ManagedView {
         })
     }
 
-    fn eval(&self, script: String) -> tauri::Result<()> {
-        self.webview().eval(script)
+    fn eval_value(&self, expression: String) -> Result<bool, String> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.webview()
+            .with_webview(move |webview| {
+                let result = eval_bool(&webview, &expression);
+                let _ = sender.send(result);
+            })
+            .map_err(|e| e.to_string())?;
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(8))
+            .map_err(|_| "provider page did not answer".to_string())?
     }
 }
 
@@ -195,11 +201,7 @@ impl WebAiController {
             scale_factor: 1.0,
         });
         let rect = to_physical_rect(initial_bounds);
-        let (managed, fallback) = match main.as_ref().window().add_child(
-            builder,
-            rect.position,
-            rect.size,
-        ) {
+        let (managed, fallback) = match main.add_child(builder, rect.position, rect.size) {
             Ok(child) => (ManagedView::Child(Box::new(child)), None),
             Err(error) => {
                 log::warn!(target: "agentero::web_ai", "child WebView failed for {id}: {error}");
@@ -320,13 +322,10 @@ impl WebAiController {
             return Ok(false);
         };
         let encoded = serde_json::to_string(text).map_err(|e| e.to_string())?;
-        entry
-            .view
-            .eval(format!(
-                "window.__AGENTERO_WEB_AI__?.appendText({encoded});"
-            ))
-            .map_err(|e| e.to_string())?;
-        Ok(true)
+        let shown = entry.view.eval_value(format!(
+            "window.__AGENTERO_WEB_AI__?.appendText({encoded}) === true"
+        ))?;
+        Ok(shown)
     }
 
     pub fn attach_file(
@@ -334,49 +333,49 @@ impl WebAiController {
         provider_id: &str,
         attachment: &PreparedAttachment,
     ) -> Result<bool, String> {
-        let state = self.state.lock().map_err(|_| "web AI state poisoned")?;
-        let Some(entry) = state.views.get(provider_id) else {
+        if !providers::supports_pdf(provider_id) {
             return Ok(false);
-        };
+        }
+        let state = self.state.lock().map_err(|_| "web AI state poisoned")?;
+        if !state.views.contains_key(provider_id) {
+            return Ok(false);
+        }
+        let path = attachment.path.display().to_string();
         let name = attachment
             .path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("attachment.bin");
-        let mime = match attachment.kind {
-            agentero_core::features::web_ai::AttachmentKind::Pdf => "application/pdf",
-            agentero_core::features::web_ai::AttachmentKind::Image => mime_for_image(name),
-        };
-        let encoded_name = serde_json::to_string(name).map_err(|e| e.to_string())?;
-        let encoded_mime = serde_json::to_string(mime).map_err(|e| e.to_string())?;
-        let encoded_hash = serde_json::to_string(&attachment.sha256).map_err(|e| e.to_string())?;
-        entry.view.eval(format!(
-            "window.__AGENTERO_WEB_AI__?.beginAttachment({encoded_name}, {encoded_mime}, {}, {encoded_hash});",
-            attachment.size
-        )).map_err(|e| e.to_string())?;
-
-        const CHUNK_SIZE: usize = 256 * 1024;
-        let mut file = File::open(&attachment.path).map_err(|e| e.to_string())?;
-        let mut chunk = vec![0_u8; CHUNK_SIZE];
+            .unwrap_or("attachment.pdf")
+            .to_string();
+        drop(state);
+        assign_provider_file(self, provider_id, &path)?;
+        let encoded_name = serde_json::to_string(&name).map_err(|e| e.to_string())?;
+        let expression =
+            format!("window.__AGENTERO_WEB_AI__?.attachmentShown({encoded_name}) === true");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
         loop {
-            let read = file.read(&mut chunk).map_err(|e| e.to_string())?;
-            if read == 0 {
-                break;
+            let shown = {
+                let state = self.state.lock().map_err(|_| "web AI state poisoned")?;
+                let Some(entry) = state.views.get(provider_id) else {
+                    return Ok(false);
+                };
+                entry.view.eval_value(expression.clone())?
+            };
+            if shown || std::time::Instant::now() >= deadline {
+                return Ok(shown);
             }
-            let encoded = base64::engine::general_purpose::STANDARD.encode(&chunk[..read]);
-            let encoded = serde_json::to_string(&encoded).map_err(|e| e.to_string())?;
-            entry
-                .view
-                .eval(format!(
-                    "window.__AGENTERO_WEB_AI__?.appendAttachmentChunk({encoded});"
-                ))
-                .map_err(|e| e.to_string())?;
+            std::thread::sleep(std::time::Duration::from_millis(250));
         }
+    }
+
+    pub fn reveal_file_input(&self, provider_id: &str) -> Result<bool, String> {
+        let state = self.state.lock().map_err(|_| "web AI state poisoned")?;
+        let Some(entry) = state.views.get(provider_id) else {
+            return Ok(false);
+        };
         entry
             .view
-            .eval("window.__AGENTERO_WEB_AI__?.finishAttachment();".into())
-            .map_err(|e| e.to_string())?;
-        Ok(true)
+            .eval_value("window.__AGENTERO_WEB_AI__?.revealFileInput() === true".into())
     }
 
     pub fn validate_page_event(&self, event: &PageEvent) -> bool {
@@ -436,6 +435,12 @@ fn open_auth_popup(
     features: tauri::webview::NewWindowFeatures,
 ) -> tauri::webview::NewWindowResponse<Wry> {
     if !providers::is_provider_navigation_url(provider_id, url.as_str()) {
+        log::warn!(
+            target: "agentero::web_ai",
+            "auth popup denied provider={provider_id} host={} path={}",
+            url.host_str().unwrap_or("<unknown>"),
+            url.path()
+        );
         return tauri::webview::NewWindowResponse::Deny;
     }
     let label = format!("web-ai-auth-{}-{}", provider_id, Uuid::new_v4().simple());
@@ -465,6 +470,12 @@ fn handle_navigation(
 ) -> bool {
     let allowed = providers::is_provider_navigation_url(provider_id, url.as_str());
     if !allowed {
+        log::warn!(
+            target: "agentero::web_ai",
+            "navigation denied provider={provider_id} host={} path={}",
+            url.host_str().unwrap_or("<unknown>"),
+            url.path()
+        );
         return false;
     }
     let event = PageEvent {
@@ -480,31 +491,206 @@ fn handle_navigation(
     true
 }
 
-fn mime_for_image(name: &str) -> &'static str {
-    let extension = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    match extension.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => "application/octet-stream",
+fn assign_provider_file(
+    controller: &WebAiController,
+    provider_id: &str,
+    path: &str,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    let mut last_error = "provider file input is not open".to_string();
+    loop {
+        let revealed = {
+            let state = controller
+                .state
+                .lock()
+                .map_err(|_| "web AI state poisoned")?;
+            let Some(entry) = state.views.get(provider_id) else {
+                return Err("provider WebView is not open".into());
+            };
+            entry
+                .view
+                .eval_value("window.__AGENTERO_WEB_AI__?.revealFileInput() === true".into())
+                .unwrap_or(false)
+        };
+        let assigned = {
+            let state = controller
+                .state
+                .lock()
+                .map_err(|_| "web AI state poisoned")?;
+            let Some(entry) = state.views.get(provider_id) else {
+                return Err("provider WebView is not open".into());
+            };
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let file_path = path.to_string();
+            entry
+                .view
+                .webview()
+                .with_webview(move |webview| {
+                    let _ = sender.send(set_file_input(&webview, &file_path));
+                })
+                .map_err(|e| e.to_string())?;
+            drop(state);
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(8))
+                .map_err(|_| "provider page did not accept the file".to_string())?
+        };
+        if assigned.is_ok() {
+            return Ok(());
+        }
+        last_error = assigned.err().unwrap_or(last_error);
+        if !revealed || std::time::Instant::now() >= deadline {
+            return Err(last_error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
 }
 
-fn host_window(app: &AppHandle) -> Option<WebviewWindow<Wry>> {
-    app.get_webview_window("main")
-        .filter(|window| is_web_ai_host_label(window.label()))
-        .or_else(|| {
-            app.webview_windows()
-                .into_values()
-                .find(|window| is_web_ai_host_label(window.label()))
-        })
+fn eval_bool(webview: &tauri::webview::PlatformWebview, expression: &str) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        cdp_eval_bool(webview, expression)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (webview, expression);
+        Err("confirming a provider attachment is only implemented on Windows".into())
+    }
 }
 
-pub(crate) fn is_web_ai_host_label(label: &str) -> bool {
-    label != "settings"
-        && !label.starts_with("agentero-web-ai-")
-        && !label.starts_with("web-ai-window-")
+fn set_file_input(webview: &tauri::webview::PlatformWebview, path: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        cdp_set_file(webview, path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (webview, path);
+        Err("attaching a PDF is only implemented on Windows".into())
+    }
+}
+
+#[cfg(windows)]
+fn cdp_eval_bool(
+    webview: &tauri::webview::PlatformWebview,
+    expression: &str,
+) -> Result<bool, String> {
+    let value = cdp_call(
+        webview,
+        "Runtime.evaluate",
+        &serde_json::json!({
+            "expression": expression,
+            "returnByValue": true,
+            "awaitPromise": true,
+        }),
+    )?;
+    Ok(value
+        .get("result")
+        .and_then(|result| result.get("value"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false))
+}
+
+#[cfg(windows)]
+fn cdp_set_file(webview: &tauri::webview::PlatformWebview, path: &str) -> Result<(), String> {
+    let _ = cdp_call(
+        webview,
+        "Page.setInterceptFileChooserDialog",
+        &serde_json::json!({ "enabled": true }),
+    );
+    let document = cdp_call(
+        webview,
+        "DOM.getDocument",
+        &serde_json::json!({ "depth": 0 }),
+    )?;
+    let root = document
+        .pointer("/root/nodeId")
+        .and_then(|id| id.as_i64())
+        .ok_or_else(|| "provider document is unavailable".to_string())?;
+    let nodes = cdp_call(
+        webview,
+        "DOM.querySelectorAll",
+        &serde_json::json!({ "nodeId": root, "selector": "input[type='file']" }),
+    )?;
+    let node_id = nodes
+        .get("nodeIds")
+        .and_then(|ids| ids.as_array())
+        .and_then(|ids| ids.iter().find_map(|id| id.as_i64()))
+        .ok_or_else(|| "provider file input is not open".to_string())?;
+    cdp_call(
+        webview,
+        "DOM.setFileInputFiles",
+        &serde_json::json!({ "nodeId": node_id, "files": [path] }),
+    )?;
+    let _ = cdp_call(
+        webview,
+        "Page.setInterceptFileChooserDialog",
+        &serde_json::json!({ "enabled": false }),
+    );
+    Ok(())
+}
+
+#[cfg(windows)]
+fn cdp_call(
+    webview: &tauri::webview::PlatformWebview,
+    method: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, ICoreWebView2CallDevToolsProtocolMethodCompletedHandler,
+        ICoreWebView2CallDevToolsProtocolMethodCompletedHandler_Impl,
+    };
+    use windows_core::{implement, Interface, HRESULT, PCWSTR};
+
+    let core = unsafe { webview.controller().CoreWebView2() }.map_err(|e| e.to_string())?;
+    let webview11 = core
+        .cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_11>()
+        .map_err(|_| "this WebView2 build cannot set provider files".to_string())?;
+    let method = windows_core::HSTRING::from(method);
+    let parameters = windows_core::HSTRING::from(params.to_string());
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    #[implement(ICoreWebView2CallDevToolsProtocolMethodCompletedHandler)]
+    struct ProtocolDone(std::sync::Mutex<Option<std::sync::mpsc::Sender<Result<String, String>>>>);
+
+    impl ICoreWebView2CallDevToolsProtocolMethodCompletedHandler_Impl for ProtocolDone_Impl {
+        fn Invoke(&self, error: HRESULT, result: &PCWSTR) -> windows_core::Result<()> {
+            let outcome = if error.is_ok() {
+                Ok(unsafe { result.to_string() }.unwrap_or_default())
+            } else {
+                Err(error.to_string())
+            };
+            if let Ok(mut slot) = self.0.lock() {
+                if let Some(sender) = slot.take() {
+                    let _ = sender.send(outcome);
+                }
+            }
+            Ok(())
+        }
+    }
+
+    let handler: ICoreWebView2CallDevToolsProtocolMethodCompletedHandler =
+        ProtocolDone(std::sync::Mutex::new(Some(sender))).into();
+    let started = unsafe {
+        let webview = webview11
+            .cast::<ICoreWebView2>()
+            .map_err(|e| e.to_string())?;
+        webview.CallDevToolsProtocolMethod(&method, &parameters, &handler)
+    };
+    started.map_err(|e| e.to_string())?;
+    let body = receiver
+        .recv_timeout(std::time::Duration::from_secs(8))
+        .map_err(|_| "provider page did not answer".to_string())??;
+    if body.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_str(&body).map_err(|e| e.to_string())
+}
+
+fn host_window(app: &AppHandle) -> Option<Window<Wry>> {
+    // A plain `Window`, not `WebviewWindow`. Once this function attaches the
+    // provider child, `get_webview_window("main")` returns None. Do not guess
+    // another window: feature, doc, and auth popups are not hosts.
+    app.get_window("main")
 }
 
 fn closed_status(provider_id: &str) -> WebAiStatus {
@@ -533,19 +719,5 @@ fn to_physical_rect(bounds: WebAiBounds) -> PhysicalRect<i32, u32> {
             (bounds.width * scale).max(0.0).round() as u32,
             (bounds.height * scale).max(0.0).round() as u32,
         ),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_web_ai_host_label;
-
-    #[test]
-    fn host_label_accepts_primary_and_secondary_app_windows() {
-        assert!(is_web_ai_host_label("main"));
-        assert!(is_web_ai_host_label("agentero-1234"));
-        assert!(!is_web_ai_host_label("settings"));
-        assert!(!is_web_ai_host_label("agentero-web-ai-gemini"));
-        assert!(!is_web_ai_host_label("web-ai-window-gemini"));
     }
 }

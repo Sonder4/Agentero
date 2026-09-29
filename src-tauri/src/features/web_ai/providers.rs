@@ -25,7 +25,16 @@ const PROVIDERS: &[ProviderDefinition] = &[
         name: "ChatGPT",
         home_url: "https://chatgpt.com/",
         origins: &["chatgpt.com"],
-        auth_origins: &["auth.openai.com"],
+        // ChatGPT starts social login at auth.openai.com and may hand off the
+        // Google/Apple step to a top-level OAuth window.  These origins are
+        // used only by the navigation/popup allow-list; regular provider
+        // navigation still accepts chatgpt.com exclusively.
+        auth_origins: &[
+            "auth.openai.com",
+            "accounts.google.com",
+            "accounts.youtube.com",
+            "appleid.apple.com",
+        ],
         conversation_marker: "/c/",
         composer_selectors: &["#prompt-textarea", "textarea", "[contenteditable='true']"],
         attachment_selectors: &["input[type='file']"],
@@ -43,7 +52,7 @@ const PROVIDERS: &[ProviderDefinition] = &[
         name: "Gemini",
         home_url: "https://gemini.google.com/app",
         origins: &["gemini.google.com"],
-        auth_origins: &["accounts.google.com"],
+        auth_origins: &["accounts.google.com", "accounts.youtube.com"],
         conversation_marker: "/app/",
         composer_selectors: &[
             "rich-textarea [contenteditable='true']",
@@ -64,7 +73,12 @@ const PROVIDERS: &[ProviderDefinition] = &[
         name: "DeepSeek",
         home_url: "https://chat.deepseek.com/",
         origins: &["chat.deepseek.com"],
-        auth_origins: &["chat.deepseek.com"],
+        auth_origins: &[
+            "chat.deepseek.com",
+            "accounts.google.com",
+            "accounts.youtube.com",
+            "appleid.apple.com",
+        ],
         conversation_marker: "/a/chat/s/",
         composer_selectors: &["textarea", "[contenteditable='true']"],
         attachment_selectors: &["input[type='file']"],
@@ -89,7 +103,7 @@ const PROVIDERS: &[ProviderDefinition] = &[
         capabilities: WebAiCapabilities {
             text: true,
             image: true,
-            pdf: true,
+            pdf: false,
             conversation_rename: false,
             projects: false,
             connector: false,
@@ -122,6 +136,11 @@ pub fn normalize_provider_id(value: &str) -> Option<&'static str> {
         .iter()
         .find(|provider| provider.id.eq_ignore_ascii_case(id))
         .map(|provider| provider.id)
+}
+
+/// ChatGPT and Gemini accept the current paper PDF. Other providers stay text-only.
+pub fn supports_pdf(id: &str) -> bool {
+    matches!(normalize_provider_id(id), Some("chatgpt" | "gemini"))
 }
 
 /// Find a registered provider by id.
@@ -271,6 +290,15 @@ mod tests {
     }
 
     #[test]
+    fn only_chatgpt_and_gemini_accept_pdf() {
+        assert!(supports_pdf("chatgpt"));
+        assert!(supports_pdf("Gemini"));
+        assert!(!supports_pdf("deepseek"));
+        assert!(!supports_pdf("kimi"));
+        assert!(!supports_pdf("glm"));
+    }
+
+    #[test]
     fn provider_urls_require_https_origin_without_credentials() {
         assert!(is_provider_url("chatgpt", "https://chatgpt.com/"));
         assert!(is_provider_url("kimi", "https://KIMI.com/chat/abc"));
@@ -312,7 +340,31 @@ mod tests {
             "chatgpt",
             "https://auth.openai.com/login"
         ));
+        assert!(is_provider_navigation_url(
+            "chatgpt",
+            "https://accounts.google.com/o/oauth2/v2/auth"
+        ));
+        assert!(is_provider_navigation_url(
+            "chatgpt",
+            "https://accounts.youtube.com/accounts/SetSID"
+        ));
+        assert!(is_provider_navigation_url(
+            "gemini",
+            "https://accounts.google.com/v3/signin"
+        ));
+        assert!(is_provider_navigation_url(
+            "deepseek",
+            "https://accounts.google.com/o/oauth2/v2/auth"
+        ));
+        assert!(!is_provider_navigation_url(
+            "deepseek",
+            "https://platform.deepseek.com/"
+        ));
         assert!(!is_provider_url("chatgpt", "https://auth.openai.com/login"));
+        assert!(!is_provider_url(
+            "chatgpt",
+            "https://accounts.google.com/o/oauth2/v2/auth"
+        ));
         assert!(!is_provider_navigation_url(
             "chatgpt",
             "https://evil.example/login"

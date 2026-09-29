@@ -52,6 +52,9 @@ pub struct WebAiTransferTextArgs {
     pub text: String,
     pub paper_id: Option<String>,
     pub page: Option<u32>,
+    /// Absolute path of the PDF currently open. ChatGPT and Gemini attach it
+    /// with the selected text; other providers ignore it.
+    pub pdf_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, specta::Type)]
@@ -129,33 +132,54 @@ fn transfer_file(
     args: WebAiTransferFileArgs,
     kind: agentero_core::features::web_ai::AttachmentKind,
 ) -> Result<WebAiTransferResult, String> {
-    let prepared = agentero_core::features::web_ai::prepare_attachment(Path::new(&args.path), kind)
-        .map_err(|e| e.to_string())?;
-    match controller.attach_file(&args.provider_id, &prepared) {
-        Ok(true) => {
-            cleanup_attachment(&prepared.path);
-            Ok(WebAiTransferResult {
-                provider_id: args.provider_id,
-                draft_ready: false,
-                attachment_ready: true,
-                requires_send: true,
-                manual_file: None,
-                message: None,
-                paper_id: args.paper_id,
-                page: args.page,
-            })
-        }
-        Ok(false) | Err(_) => Ok(WebAiTransferResult {
+    if kind == agentero_core::features::web_ai::AttachmentKind::Pdf
+        && !super::providers::supports_pdf(&args.provider_id)
+    {
+        return Ok(WebAiTransferResult {
             provider_id: args.provider_id,
             draft_ready: false,
             attachment_ready: false,
             requires_send: true,
-            manual_file: Some(prepared.path.display().to_string()),
-            message: Some("choose the prepared file in the provider page".into()),
+            manual_file: None,
+            message: Some("this provider does not accept a PDF".into()),
             paper_id: args.paper_id,
             page: args.page,
-        }),
+        });
     }
+    let prepared = agentero_core::features::web_ai::prepare_attachment(Path::new(&args.path), kind)
+        .map_err(|e| e.to_string())?;
+    let attached = controller
+        .attach_file(&args.provider_id, &prepared)
+        .unwrap_or(false);
+    if !attached {
+        let _ = controller.reveal_file_input(&args.provider_id);
+        let attached = controller
+            .attach_file(&args.provider_id, &prepared)
+            .unwrap_or(false);
+        if !attached {
+            return Ok(WebAiTransferResult {
+                provider_id: args.provider_id,
+                draft_ready: false,
+                attachment_ready: false,
+                requires_send: true,
+                manual_file: Some(prepared.path.display().to_string()),
+                message: Some("choose the prepared file in the provider page".into()),
+                paper_id: args.paper_id,
+                page: args.page,
+            });
+        }
+    }
+    cleanup_attachment(&prepared.path);
+    Ok(WebAiTransferResult {
+        provider_id: args.provider_id,
+        draft_ready: false,
+        attachment_ready: true,
+        requires_send: true,
+        manual_file: None,
+        message: None,
+        paper_id: args.paper_id,
+        page: args.page,
+    })
 }
 
 fn cleanup_attachment(path: &Path) {
@@ -300,8 +324,36 @@ pub async fn web_ai_transfer_text(
     controller: State<'_, Arc<WebAiController>>,
     args: WebAiTransferTextArgs,
 ) -> Result<ApiResult<WebAiTransferResult>, String> {
+    let pdf_path = args.pdf_path.clone();
+    let mut result = transfer_text_only(&controller, args)?;
+    if let Some(path) = pdf_path.filter(|path| !path.trim().is_empty()) {
+        if super::providers::supports_pdf(&result.provider_id) {
+            let file = transfer_file(
+                &controller,
+                WebAiTransferFileArgs {
+                    provider_id: result.provider_id.clone(),
+                    path,
+                    paper_id: result.paper_id.clone(),
+                    page: result.page,
+                },
+                agentero_core::features::web_ai::AttachmentKind::Pdf,
+            )?;
+            result.attachment_ready = file.attachment_ready;
+            result.manual_file = file.manual_file;
+            if !file.attachment_ready {
+                result.message = file.message;
+            }
+        }
+    }
+    Ok(ApiResult::ok(result))
+}
+
+fn transfer_text_only(
+    controller: &WebAiController,
+    args: WebAiTransferTextArgs,
+) -> Result<WebAiTransferResult, String> {
     let ready = controller.append_text(&args.provider_id, &args.text)?;
-    let mut result = WebAiTransferResult {
+    Ok(WebAiTransferResult {
         provider_id: args.provider_id,
         draft_ready: ready,
         attachment_ready: false,
@@ -310,11 +362,7 @@ pub async fn web_ai_transfer_text(
         message: (!ready).then(|| "provider WebView is not open".into()),
         paper_id: args.paper_id,
         page: args.page,
-    };
-    if ready {
-        result.message = None;
-    }
-    Ok(ApiResult::ok(result))
+    })
 }
 
 #[tauri::command]
@@ -367,6 +415,7 @@ pub async fn web_ai_prepare_context(
             text: args.text,
             paper_id: args.paper_id,
             page: args.page,
+            pdf_path: None,
         },
     )
     .await

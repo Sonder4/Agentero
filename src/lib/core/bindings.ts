@@ -5171,6 +5171,7 @@ export type WebAiTransferTextArgs = {
 	text: string,
 	paperId: string | null,
 	page: number | null,
+	pdfPath: string | null,
 };
 
 export type WebAiViewArgs = {

@@ -25,6 +25,7 @@ import {
 import { commands } from "@/lib/core/bindings";
 import { callApiResult } from "@/lib/core/ipc";
 import { notifyError } from "@/lib/core/notify";
+import { findLocalPdfPath } from "@/lib/paper";
 import type { PdfAskAnchor } from "@/lib/pdf/ask/types";
 import {
 	DEFAULT_HIGHLIGHT_COLOR,
@@ -210,27 +211,47 @@ export function usePdfSelectionActions({
 		const quote = menu?.anchor.quote?.trim();
 		const page = menu?.anchor.page;
 		if (!quote) return;
+		const source = paperAbsPath;
 		setSelectionMenu(null);
-		void callApiResult(() =>
-			commands.webAiTransferSelection({
-				providerId: "chatgpt",
-				text: quote,
-				paperId: null,
-				page: page ?? null,
-			}),
-		)
+		void (async () => {
+			const [states, pdfPath] = await Promise.all([
+				callApiResult(() => commands.webAiStatus(null)),
+				source
+					? findLocalPdfPath(source).catch(() =>
+							/\.pdf$/i.test(source) ? source : null,
+						)
+					: Promise.resolve(null),
+			]);
+			const open = states.find(
+				(item) =>
+					item.view !== "closed" &&
+					(item.activeProviderId === "chatgpt" ||
+						item.activeProviderId === "gemini"),
+			);
+			const providerId = open?.activeProviderId ?? "chatgpt";
+			return callApiResult(() =>
+				commands.webAiTransferSelection({
+					providerId,
+					text: quote,
+					paperId: null,
+					page: page ?? null,
+					pdfPath,
+				}),
+			);
+		})()
 			.then((result) => {
-				if (!result.draftReady) {
+				if (!result.draftReady && !result.attachmentReady) {
 					notifyError(result.message ?? "Web AI");
 					return;
 				}
+				if (result.manualFile) notifyError(result.message ?? "Web AI");
 				setRightSidebarTab("web-ai");
 				setRightSidebarOpenState(true);
 			})
 			.catch((error: unknown) => {
 				notifyError(error instanceof Error ? error.message : String(error));
 			});
-	}, [setSelectionMenu]);
+	}, [paperAbsPath, setSelectionMenu]);
 
 	return {
 		handleHighlight,

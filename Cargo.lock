@@ -146,7 +146,9 @@ dependencies = [
  "urlencoding",
  "uuid",
  "walkdir",
+ "webview2-com",
  "which",
+ "windows-core 0.61.2",
  "winreg",
  "zip 2.4.2",
 ]

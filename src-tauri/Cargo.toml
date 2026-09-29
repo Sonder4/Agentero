@@ -146,3 +146,5 @@ openssh-sftp-client = { version = "0.15.7", features = ["openssh"] }
 # new terminals can run `agentero-cli` without manual setup.
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+webview2-com = "0.38.2"
+windows-core = "0.61.2"

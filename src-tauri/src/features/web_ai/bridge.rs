@@ -91,17 +91,44 @@ pub fn bootstrap_script(
               const editor = first(composerSelectors);
               if (!editor) throw new Error("composer not found");
               editor.focus();
+              const next = (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement)
+                ? editor.value + text
+                : (editor.innerText || editor.textContent || "") + text;
               if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {{
                 const prototype = editor instanceof HTMLTextAreaElement
                   ? HTMLTextAreaElement.prototype
                   : HTMLInputElement.prototype;
                 const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-                setter?.call(editor, editor.value + text);
+                setter?.call(editor, next);
                 editor.dispatchEvent(new Event("input", {{ bubbles: true }}));
               }} else {{
                 document.execCommand("insertText", false, text);
               }}
-              return true;
+              const shown = editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement
+                ? editor.value
+                : (editor.innerText || editor.textContent || "");
+              return shown.includes(text);
+            }},
+            revealFileInput() {{
+              const existing = [...document.querySelectorAll("input[type='file']")].find((node) => {{
+                const accept = (node.getAttribute("accept") || "").toLowerCase();
+                return !accept || accept.includes("pdf") || accept.includes("*/*") || accept.includes("application/pdf");
+              }});
+              if (existing) return true;
+              const editor = first(composerSelectors);
+              const box = editor?.closest("form") || editor?.parentElement?.parentElement || document;
+              const visible = (node) => node.getClientRects().length && !node.disabled;
+              const label = (node) => [node.textContent, node.getAttribute("aria-label"), node.getAttribute("title"), node.getAttribute("data-testid")].filter(Boolean).join(" ");
+              const upload = [...document.querySelectorAll("[role='menuitem'], [role='menu'] button")].find((node) => visible(node) && /upload.*file|add.*file|upload from computer|上传文件|添加文件|从电脑上传/i.test(label(node)));
+              if (upload) {{ upload.click(); return true; }}
+              const button = [...box.querySelectorAll("button,[role='button']")].find((node) => visible(node) && /attach|add files|upload|composer-plus|添加照片和文件|添加文件|附件|上传/i.test(label(node)));
+              if (button) {{ button.click(); return true; }}
+              return false;
+            }},
+            attachmentShown(name) {{
+              if (typeof name !== "string" || !name) return false;
+              const body = document.body?.innerText || "";
+              return body.includes(name);
             }},
             beginAttachment(name, mime, size, sha256) {{
               if (typeof name !== "string" || typeof mime !== "string" ||
@@ -170,8 +197,10 @@ mod tests {
         assert!(script.contains("nonce-1"));
         assert!(!script.contains("window.__TAURI_INTERNALS__"));
         let lower = script.to_ascii_lowercase();
-        assert!(!lower.contains(".click("));
+        assert!(lower.contains(".click("));
         assert!(!lower.contains("submit"));
+        assert!(script.contains("attachmentShown"));
+        assert!(script.contains("revealFileInput"));
     }
 
     #[test]

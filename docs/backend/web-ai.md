@@ -11,15 +11,17 @@ Agentero 的 Web AI 集成位于 `features/web_ai`，与普通论文网页代理
 
 ## 页面桥
 
-每个 WebView 使用随机 nonce 和 provider origin 白名单。Host 只注入有限的 `appendText` 与分块附件接口；页面事件必须同时通过 WebView provider、nonce、事件类型和 64 KiB 大小校验。页面不能调用 `__TAURI_INTERNALS__`，也不能继承主窗口的文件系统、Shell、Dialog、Vault 或 MCP 权限。
+每个 WebView 使用随机 nonce 和 provider origin 白名单。Host 只注入有限的 `appendText`、打开文件入口和附件确认接口；页面事件必须同时通过 WebView provider、nonce、事件类型和 64 KiB 大小校验。页面不能调用 `__TAURI_INTERNALS__`，也不能继承主窗口的文件系统、Shell、Dialog、Vault 或 MCP 权限。
 
-文本追加使用 provider registry 中的 composer 选择器，只追加草稿。附件准备失败或 WebView 未打开时返回 `manualFile`，scratch 文件保留给用户手动选择；成功后才清理。结果里的 `requiresSend` 永远为 `true`，注入脚本不点击发送按钮。
+文本追加使用 provider registry 中的 composer 选择器，只追加草稿，并且要在输入框里读回这段文字才算 `draftReady`。ChatGPT 和 Gemini 的 PDF 由 Windows WebView2 的 `DOM.setFileInputFiles` 写入真实路径；脚本伪造的 `DataTransfer` 不再使用。`attachmentReady` 只在页面正文出现该文件名时为真。写入失败或 WebView 未打开时返回 `manualFile`，scratch 文件保留给用户手动选择；确认后才清理。DeepSeek、Kimi、GLM 不接收 PDF。结果里的 `requiresSend` 永远为 `true`，注入脚本不点击发送按钮。
 
-`web_ai_copy_to_notes` 只在调用方已经确认目标论文后，把回答追加到 `{paper}/NOTES.md`，并保留已有 frontmatter。PDF 选区菜单可以准备当前选中文本到 ChatGPT composer；它不自动绑定论文，也不自动发送。
+PDF 选区菜单把当前选中文本和当前论文 PDF 一起交给已打开的 ChatGPT 或 Gemini；都没打开时默认 ChatGPT。它不自动绑定论文，也不自动发送。
+
+`web_ai_copy_to_notes` 只在调用方已经确认目标论文后，把回答追加到 `{paper}/NOTES.md`，并保留已有 frontmatter。
 
 ## 尚未验收
 
-Windows、macOS、Linux 上的真实登录态、五个 provider DOM 和附件上传仍需人工 smoke。当前页面桥不能证明远程页面已经接受脚本生成的文件。macOS 与 Linux/Wayland 没有在本机执行。
+Windows、macOS、Linux 上的真实登录态和五个 provider DOM 仍需人工 smoke。Windows 上 ChatGPT 与 Gemini 的 PDF 由 WebView2 写入，并以页面是否出现文件名确认；macOS 与 Linux 还没有这条文件通道。
 
 ## MCP Connector
 
