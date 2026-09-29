@@ -189,6 +189,36 @@ export async function createVaultDirectory(path: string): Promise<void> {
  * Directories are removed recursively (including non-empty).
  * Remote vaults use SFTP remove (no recycle bin in MVP).
  */
+/** Rename/move a file or directory under the vault. */
+export async function renameVaultPath(
+	fromPath: string,
+	toPath: string,
+): Promise<void> {
+	if (!isTauri()) {
+		throw new Error(i18n.t("app:vault.writeDesktopOnly"));
+	}
+	const trimmedFrom = fromPath.trim();
+	const trimmedTo = toPath.trim();
+	if (!trimmedFrom || !trimmedTo) {
+		throw new Error("Invalid rename path");
+	}
+	const remoteFrom = parseRemoteJoinedPath(trimmedFrom);
+	const remoteTo = parseRemoteJoinedPath(trimmedTo);
+	if (remoteFrom || remoteTo) {
+		throw new Error("Remote vault rename is not supported");
+	}
+	const { mkdir, rename } = await import("@tauri-apps/plugin-fs");
+	const parent = trimmedTo.replace(/[\\/][^\\/]+$/, "");
+	if (parent && parent !== trimmedTo) {
+		try {
+			await mkdir(parent, { recursive: true });
+		} catch {
+			// Parent may already exist
+		}
+	}
+	await rename(trimmedFrom, trimmedTo);
+}
+
 export async function removeVaultPath(path: string): Promise<void> {
 	if (!isTauri()) {
 		throw new Error(i18n.t("app:vault.writeDesktopOnly"));

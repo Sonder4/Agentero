@@ -36,9 +36,15 @@ export {
 	isTranslateProviderId,
 	listSelectableProviders,
 } from "@/lib/translate/services";
+export type {
+	DualPaneSource,
+	TranslationDisplayMode,
+} from "@/lib/translate/types";
 export {
 	COMMERCIAL_MT_DEFAULT_BASE_URLS,
 	COMMERCIAL_MT_DOCS_URLS,
 	COMMERCIAL_MT_PROVIDER_IDS,
+	DUAL_PANE_SOURCES,
 	FREE_MT_PROVIDER_IDS,
+	TRANSLATION_DISPLAY_MODES,
 } from "@/lib/translate/types";

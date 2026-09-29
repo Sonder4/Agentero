@@ -59,13 +59,14 @@
 			"tabTitle": "Translation – {{title}}"
 		},
 		"latexTranslation": {
-			"desktopOnly": "LaTeX translation is only available in the desktop app.",
+			"desktopOnly": "LaTeX-source translation only works locally.",
 			"noSource": "This paper has no local LaTeX source to translate.",
 			"missingPaperPath": "Paper path is missing; cannot start LaTeX translation.",
 			"translating": "Translating LaTeX source…",
 			"compiling": "Compiling translated LaTeX…",
-			"compileFailed": "Failed to compile the translated LaTeX. Check that a TeX engine is installed.",
-			"tabTitle": "LaTeX Translation"
+			"compileFailed": "LaTeX compile failed. Check the log in the output panel.",
+			"fallbackToLayout": "No LaTeX source found; falling back to PDF-layout translation.",
+			"tabTitle": "Translation (LaTeX)"
 		}
 	},
 	"pdfAsk": {

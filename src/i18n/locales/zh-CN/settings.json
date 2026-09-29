@@ -413,19 +413,19 @@
 		"autoSelection": {
 			"label": "PDF 划词后自动翻译"
 		},
-		"displayMode": {
-			"label": "翻译显示模式",
-			"overlay": "在原 PDF 上覆盖",
-			"dualPane": "双栏对照"
-		},
-		"dualPaneSource": {
-			"label": "双栏来源",
-			"pdf": "PDF 版式翻译",
-			"latex": "LaTeX 源翻译"
-		},
 		"layoutConcurrency": {
 			"label": "PDF 全文翻译并发数",
 			"description": "同时翻译的文本块数量。数值越高速度越快，也可能更容易触发限流。"
+		},
+		"displayMode": {
+			"label": "显示模式",
+			"overlay": "在 PDF 上叠加显示",
+			"dualPane": "左右分屏"
+		},
+		"dualPaneSource": {
+			"label": "右侧窗格来源",
+			"pdf": "翻译后的 PDF 版式",
+			"latex": "翻译后的 LaTeX（编译产出 PDF）"
 		},
 		"providerConfig": {
 			"section": "API 服务",

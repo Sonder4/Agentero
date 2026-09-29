@@ -53,6 +53,7 @@ export type LocalActivityInput = {
 	kind: LocalActivityKind;
 	title: string;
 	detail?: string;
+	paperPath?: string | null;
 };
 
 export type LocalActivityContext = {
@@ -138,6 +139,7 @@ export async function runLocalActivity<T>(
 		kind: input.kind,
 		title: input.title,
 		detail: input.detail,
+		paperPath: input.paperPath,
 		running: concurrency == null,
 	});
 	const controller = new AbortController();

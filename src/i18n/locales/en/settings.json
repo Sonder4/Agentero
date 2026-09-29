@@ -413,19 +413,19 @@
 		"autoSelection": {
 			"label": "Auto-translate PDF selection"
 		},
-		"displayMode": {
-			"label": "Translation display mode",
-			"overlay": "Overlay on original PDF",
-			"dualPane": "Dual pane"
-		},
-		"dualPaneSource": {
-			"label": "Dual pane source",
-			"pdf": "PDF layout translation",
-			"latex": "Translated LaTeX source"
-		},
 		"layoutConcurrency": {
 			"label": "PDF full-text translation concurrency",
 			"description": "Number of text blocks translated in parallel. Higher values can be faster but may trigger rate limits."
+		},
+		"displayMode": {
+			"label": "Display mode",
+			"overlay": "Overlay on PDF",
+			"dualPane": "Side-by-side dual pane"
+		},
+		"dualPaneSource": {
+			"label": "Right-pane source",
+			"pdf": "Translated PDF layout",
+			"latex": "Translated LaTeX (compiled to PDF)"
 		},
 		"providerConfig": {
 			"section": "API Services",

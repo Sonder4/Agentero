@@ -661,10 +661,12 @@ function normalizeTranslateSettings(
 	if (typeof raw.autoTranslateSelection === "boolean") {
 		base.autoTranslateSelection = raw.autoTranslateSelection;
 	}
-	// Migrate legacy dualPaneTranslate boolean to the new displayMode pair.
-	const legacyDualPane = (raw as { dualPaneTranslate?: boolean })
+	// Legacy migration: older snapshots stored a single `dualPaneTranslate`
+	// boolean instead of the displayMode / dualPaneSource split. Apply it only
+	// when the new field is absent so an explicit displayMode always wins.
+	const legacyDualPane = (raw as { dualPaneTranslate?: unknown })
 		.dualPaneTranslate;
-	if (typeof legacyDualPane === "boolean") {
+	if (typeof legacyDualPane === "boolean" && raw.displayMode === undefined) {
 		base.displayMode = legacyDualPane ? "dualPane" : "overlay";
 		base.dualPaneSource = "pdf";
 	}

@@ -59,7 +59,9 @@ export type PdfViewerProps = {
 	onVisualTracesChange?: (traces: PdfVisualSessionTrace[]) => void;
 	/**
 	 * Open a rendered-translation workspace tab split to the right.
-	 * Used when Settings → Translate → dualPaneTranslate is enabled.
+	 * Used when Settings → Translate → displayMode is "dualPane".
+	 * The workspace host routes this to either PDF-layout translation or
+	 * LaTeX-source translation depending on dualPaneSource.
 	 */
 	onOpenTranslationTab?: (
 		paperTabId: string,

@@ -242,6 +242,29 @@ pub struct LibraryColumnPref {
     pub width_rem: Option<f64>,
 }
 
+/// How translated PDF content is displayed: overlay on top of the original
+/// PDF, or in a secondary dual-pane tab/panel.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TranslationDisplayMode {
+    #[default]
+    Overlay,
+    DualPane,
+}
+
+/// When `displayMode == DualPane`, which source material to render in the
+/// right pane. `pdf` keeps the existing layout-translated PDF, `latex`
+/// routes through the LaTeX-source translation pipeline
+/// ([`crate::features::workspace::tex_compile`] + the actions-latex
+/// workspace action).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum DualPaneSource {
+    #[default]
+    Pdf,
+    Latex,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslateSettings {
@@ -255,16 +278,17 @@ pub struct TranslateSettings {
     pub provider_configs: HashMap<String, TranslateProviderConfig>,
     #[serde(default)]
     pub auto_translate_selection: bool,
-    /// Deprecated: kept for migration. Use `display_mode` + `dual_pane_source`.
-    #[serde(default)]
-    pub dual_pane_translate: bool,
     /// Number of PDF layout translation workers (clamped to 1..=8).
     #[serde(default = "default_layout_translate_concurrency")]
     pub layout_translate_concurrency: u8,
-    #[serde(default = "default_translate_display_mode")]
-    pub display_mode: String,
-    #[serde(default = "default_translate_dual_pane_source")]
-    pub dual_pane_source: String,
+    /// Render mode for PDF translations. Replaces the legacy
+    /// `dual_pane_translate` boolean that toggled dual pane on/off.
+    #[serde(default)]
+    pub display_mode: TranslationDisplayMode,
+    /// Right-pane source when [`display_mode`](Self::display_mode) is
+    /// [`TranslationDisplayMode::DualPane`].
+    #[serde(default)]
+    pub dual_pane_source: DualPaneSource,
     #[serde(default)]
     pub agent_id: String,
     #[serde(default)]
@@ -284,10 +308,9 @@ impl Default for TranslateSettings {
             source_lang: default_translate_source(),
             provider_configs: HashMap::new(),
             auto_translate_selection: false,
-            dual_pane_translate: false,
             layout_translate_concurrency: default_layout_translate_concurrency(),
-            display_mode: default_translate_display_mode(),
-            dual_pane_source: default_translate_dual_pane_source(),
+            display_mode: TranslationDisplayMode::default(),
+            dual_pane_source: DualPaneSource::default(),
             agent_id: String::new(),
             model_id: String::new(),
             custom_prompt: String::new(),
@@ -512,12 +535,6 @@ fn default_translate_source() -> String {
 }
 fn default_layout_translate_concurrency() -> u8 {
     2
-}
-fn default_translate_display_mode() -> String {
-    "overlay".into()
-}
-fn default_translate_dual_pane_source() -> String {
-    "pdf".into()
 }
 /// Layout analysis stays on the bundled offline PP-DocLayoutV3 model: it is
 /// free, local, and a cloud backend would bill every PDF for no gain. The

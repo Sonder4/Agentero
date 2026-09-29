@@ -4737,18 +4737,20 @@ export type TranslateProviderConfig = {
 	model?: string,
 };
 
+export type TranslationDisplayMode = "overlay" | "dualPane";
+
+export type DualPaneSource = "pdf" | "latex";
+
 export type TranslateSettings = {
 	provider?: string,
 	targetLang?: string,
 	sourceLang?: string,
 	providerConfigs?: { [key in string]: TranslateProviderConfig },
 	autoTranslateSelection?: boolean,
-	/**  Deprecated: kept for migration. Use `display_mode` + `dual_pane_source`. */
-	dualPaneTranslate?: boolean,
 	/**  Number of PDF layout translation workers (clamped to 1..=8). */
 	layoutTranslateConcurrency?: number,
-	displayMode?: string,
-	dualPaneSource?: string,
+	displayMode?: TranslationDisplayMode,
+	dualPaneSource?: DualPaneSource,
 	agentId?: string,
 	modelId?: string,
 	/**

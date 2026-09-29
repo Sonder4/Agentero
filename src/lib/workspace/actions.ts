@@ -15,10 +15,12 @@ import {
 	isAgentCitationHref,
 	rewriteCitationHrefToPdf,
 } from "@/lib/agent/citation-href";
+import { backgroundTasksStore } from "@/lib/core/background-tasks";
 import { errorText } from "@/lib/core/error";
 import { notifyError, notifyUndo, notifyWarning } from "@/lib/core/notify";
 import { openExternalUrl } from "@/lib/core/open-external";
 import { closeTopOverlay } from "@/lib/core/overlay-stack";
+import { sameRelPaperPath } from "@/lib/core/path";
 import { isTauri } from "@/lib/core/tauri";
 import { lifecycle } from "@/lib/lifecycle";
 import {
@@ -94,6 +96,10 @@ import {
 	wikiNavigationDestination,
 } from "@/lib/wiki";
 import { rebuildWikiAndNotify, trackSelfWrittenPath } from "@/lib/wiki/store";
+import {
+	hasLatexTranslationSource,
+	openLatexTranslationTab,
+} from "@/lib/workspace/actions-latex-translation";
 import { dockHandle } from "@/lib/workspace/dock-registry";
 import {
 	getActiveTabId,
@@ -809,11 +815,16 @@ export function splitActivePane(): void {
  * Open a rendered-translation panel to the right of the referenced paper panel.
  * When dual-pane translation is enabled, the full-document translate button
  * calls this after kicking off the layout translation job.
+ *
+ * If Settings → Translate → dualPaneSource is "latex", this first checks for a
+ * local LaTeX source under `source/`. When one exists, it translates and
+ * compiles that source; otherwise it falls back to the PDF-layout translation
+ * path so the user still gets a right-pane translation.
  */
-export function openTranslationTab(
+export async function openTranslationTab(
 	paperTabId: string,
 	paperAbsPath: string | null,
-): void {
+): Promise<void> {
 	if (!paperAbsPath) return;
 	const tabs = getTabs();
 	// The caller passes the viewer's document id; bytes-backed viewers suffix a
@@ -823,6 +834,37 @@ export function openTranslationTab(
 		tabs.find((t) => t.id === stripEmbedPdfRevision(paperTabId));
 	if (!paperTab) return;
 	paperTabId = paperTab.id;
+
+	const settings = loadSettings();
+	if (settings.translate.dualPaneSource === "latex") {
+		const paperId = paperTab.paperMeta?.id;
+		const paperRelPath = paperTab.paperMeta?.path;
+		const latexAlreadyRunning = backgroundTasksStore
+			.getState()
+			.tasks.some(
+				(task) =>
+					task.kind === "latexTranslate" &&
+					(task.status === "queued" || task.status === "running") &&
+					sameRelPaperPath(task.paperPath, paperRelPath),
+			);
+		if (
+			!latexAlreadyRunning &&
+			paperId &&
+			paperRelPath &&
+			(await hasLatexTranslationSource(paperAbsPath))
+		) {
+			void openLatexTranslationTab(
+				paperTabId,
+				paperAbsPath,
+				paperRelPath,
+				paperId,
+			);
+			return;
+		}
+		if (!latexAlreadyRunning) {
+			notifyWarning(i18n.t("viewer:pdf.latexTranslation.fallbackToLayout"));
+		}
+	}
 
 	const existing = tabs.find(
 		(t) => t.id === `${tabIdForPath(paperAbsPath)}::translation`,

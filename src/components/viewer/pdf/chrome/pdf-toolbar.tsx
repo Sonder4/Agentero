@@ -17,6 +17,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { PDF_CHROME_CHIP } from "@/components/viewer/pdf/chrome/pdf-chrome-surface";
+import i18n from "@/i18n";
 import { cn } from "@/lib/core/utils";
 import { formatShortcutById } from "@/lib/shell/shortcuts";
 
@@ -40,6 +41,8 @@ type PdfToolbarProps = {
 	smartHighlightBusy?: boolean;
 	/** Trigger jEV smart highlighting for the current paper. */
 	onSmartHighlight?: () => void;
+	/** True while a LaTeX-source translation is running for this paper. */
+	latexTranslateRunning?: boolean;
 	/** True when viewing a remote paper that has no local sidecar. */
 	isRemotePaper?: boolean;
 	/** Import the remote paper into the current vault. */
@@ -62,6 +65,7 @@ export function PdfToolbar({
 	onToggleLayoutTranslate,
 	smartHighlightBusy = false,
 	onSmartHighlight,
+	latexTranslateRunning = false,
 	isRemotePaper = false,
 	onImportToLibrary,
 	importBusy = false,
@@ -99,10 +103,12 @@ export function PdfToolbar({
 
 	useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
 
+	const anyTranslateRunning = layoutTranslateRunning || latexTranslateRunning;
+
 	const handleTranslatePointerDown = useCallback(
 		(event: React.PointerEvent<HTMLButtonElement>) => {
 			if (event.button !== 0) return;
-			if (layoutTranslateActive || layoutTranslateRunning) return;
+			if (layoutTranslateActive || anyTranslateRunning) return;
 			if (layoutTranslateWaiting) return;
 			setLongPressing(true);
 			longPressTriggeredRef.current = false;
@@ -116,7 +122,7 @@ export function PdfToolbar({
 		},
 		[
 			layoutTranslateActive,
-			layoutTranslateRunning,
+			anyTranslateRunning,
 			layoutTranslateWaiting,
 			onToggleLayoutTranslate,
 		],
@@ -164,9 +170,10 @@ export function PdfToolbar({
 				suppressNextClickRef.current = false;
 				return;
 			}
+			if (latexTranslateRunning) return;
 			onToggleLayoutTranslate();
 		},
-		[onToggleLayoutTranslate],
+		[latexTranslateRunning, onToggleLayoutTranslate],
 	);
 
 	return (
@@ -250,9 +257,17 @@ export function PdfToolbar({
 									}
 									className="shrink-0 self-center"
 									data-full-text-translate
-									aria-label={layoutTranslateAriaLabel}
-									aria-pressed={layoutTranslateActive || layoutTranslateWaiting}
-									disabled={!engine}
+									aria-label={
+										latexTranslateRunning
+											? i18n.t("viewer:pdf.latexTranslation.translating")
+											: layoutTranslateAriaLabel
+									}
+									aria-pressed={
+										layoutTranslateActive ||
+										layoutTranslateWaiting ||
+										latexTranslateRunning
+									}
+									disabled={!engine || latexTranslateRunning}
 									onPointerDown={handleTranslatePointerDown}
 									onPointerUp={handleTranslatePointerUp}
 									onPointerLeave={handleTranslatePointerLeave}
@@ -261,7 +276,7 @@ export function PdfToolbar({
 								>
 									{layoutTranslateWaiting ? (
 										<Clock className="size-3.5 animate-pulse" aria-hidden />
-									) : layoutTranslateRunning && !longPressing ? (
+									) : anyTranslateRunning && !longPressing ? (
 										<Loader2 className="size-3.5 animate-spin" aria-hidden />
 									) : (
 										<Languages className="size-3.5" aria-hidden />
@@ -269,8 +284,10 @@ export function PdfToolbar({
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
-								{layoutTranslateLabel}
-								{layoutTranslateProgressLabel ? (
+								{latexTranslateRunning
+									? i18n.t("viewer:pdf.latexTranslation.translating")
+									: layoutTranslateLabel}
+								{!latexTranslateRunning && layoutTranslateProgressLabel ? (
 									<span className="ml-1 text-background/80">
 										· {layoutTranslateProgressLabel}
 									</span>

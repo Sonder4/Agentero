@@ -16,6 +16,7 @@ import type { useDocumentManagerCapability } from "@embedpdf/plugin-document-man
 import type { useLayoutAnalysisCapability } from "@embedpdf/plugin-layout-analysis/react";
 import type { useScroll } from "@embedpdf/plugin-scroll/react";
 import { type RefObject, useCallback } from "react";
+import { useStore } from "zustand";
 import type { PdfLayoutRegions } from "@/components/viewer/pdf/hooks/use-pdf-layout-regions";
 import { usePdfLayoutRegions } from "@/components/viewer/pdf/hooks/use-pdf-layout-regions";
 import { usePdfLayoutRun } from "@/components/viewer/pdf/hooks/use-pdf-layout-run";
@@ -23,6 +24,8 @@ import { usePdfLayoutTranslate } from "@/components/viewer/pdf/hooks/use-pdf-lay
 import { usePdfVisualDraft } from "@/components/viewer/pdf/hooks/use-pdf-visual-draft";
 import { renderPdfRegionPromptImage } from "@/components/viewer/pdf/region-crop";
 import type { PromptImage } from "@/lib/agent/api";
+import { backgroundTasksStore } from "@/lib/core/background-tasks";
+import { sameRelPaperPath } from "@/lib/core/path";
 import { type PdfLayoutRegion, setFocusedLayoutRegion } from "@/lib/pdf/layout";
 
 type LayoutCapability = ReturnType<
@@ -81,6 +84,8 @@ export type PdfLayoutCluster = Omit<PdfLayoutRegions, "layoutDocRegions"> &
 		handleRenderLayoutThumb: (
 			region: PdfLayoutRegion,
 		) => Promise<PromptImage | null>;
+		/** True while a LaTeX-source translation is running for this paper. */
+		latexTranslateRunning: boolean;
 	};
 
 export function usePdfLayoutCluster({
@@ -180,6 +185,15 @@ export function usePdfLayoutCluster({
 
 	const { screenPointForRegion } = usePdfVisualDraft({ hostRef });
 
+	const latexTranslateRunning = useStore(backgroundTasksStore, (s) =>
+		s.tasks.some(
+			(task) =>
+				task.kind === "latexTranslate" &&
+				(task.status === "queued" || task.status === "running") &&
+				sameRelPaperPath(task.paperPath, paperRelPath),
+		),
+	);
+
 	const {
 		layoutTranslateItemsByPage,
 		layoutTranslatePageStateByPage,
@@ -223,5 +237,6 @@ export function usePdfLayoutCluster({
 		layoutTranslateLabel,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,
+		latexTranslateRunning,
 	};
 }

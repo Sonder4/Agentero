@@ -5,6 +5,7 @@ export {
 	readVaultBytes,
 	readVaultFile,
 	removeVaultPath,
+	renameVaultPath,
 	splitVaultRel,
 	vaultPathExists,
 	writeVaultBytes,

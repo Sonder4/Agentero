@@ -168,14 +168,19 @@ export async function cleanTexAuxFiles(texPath: string): Promise<boolean> {
  */
 export async function compileTexFile(
 	texPath: string,
-	opts?: { quietSuccess?: boolean; triggerPath?: string },
+	opts?: {
+		quietSuccess?: boolean;
+		triggerPath?: string;
+		/** Override the engine selected in the UI (e.g. "xelatex" for CJK). */
+		engine?: string;
+	},
 ): Promise<string | null> {
 	initTexEngines();
 	// Wait for the in-flight scan: reading the store immediately after a
 	// window reload races detection and falsely reports "no engine".
 	await ensureTexEngines();
 	const { selectedEngine, engines, compilingPath } = texCompileStore.getState();
-	const engine = selectedEngine ?? engines[0]?.id ?? null;
+	const engine = opts?.engine ?? selectedEngine ?? engines[0]?.id ?? null;
 	if (!engine) {
 		notifyError(i18n.t("sidebar:fileTree.selectEngineFirst"));
 		return null;

@@ -144,8 +144,6 @@ import {
 	selectionAnchorKey,
 } from "@/lib/pdf/selection";
 import { PDF_ZOOM_MAX, PDF_ZOOM_MIN } from "@/lib/pdf/zoom";
-import { basenameOf } from "@/lib/vault/path";
-import { openLatexTranslationTab } from "@/lib/workspace/actions-latex-translation";
 
 export type {
 	PdfViewerHandle,
@@ -460,7 +458,6 @@ function PdfViewerInner({
 		(s) => s.translate.autoTranslateSelection,
 	);
 	const displayMode = useSettings((s) => s.translate.displayMode);
-	const dualPaneSource = useSettings((s) => s.translate.dualPaneSource);
 	const dualPaneTranslate = displayMode === "dualPane";
 	const paperMeta = useMemo(() => {
 		if (paperMetaProp) return paperMetaProp;
@@ -923,6 +920,7 @@ function PdfViewerInner({
 		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 		togglePageLayoutTranslate,
+		latexTranslateRunning,
 	} = usePdfLayoutCluster({
 		docId,
 		translationPane,
@@ -946,6 +944,7 @@ function PdfViewerInner({
 
 	const handleToggleLayoutTranslateWithDualPane = useCallback(() => {
 		if (plainViewer) return;
+		if (latexTranslateRunning) return;
 		if (displayMode !== "dualPane") {
 			toggleLayoutTranslate();
 			return;
@@ -954,34 +953,18 @@ function PdfViewerInner({
 		// translation panel. The translation pane itself owns the single
 		// layout-translation job so only one task runs at a time. The receiver
 		// resolves this back to a workspace tab, so pass the revision-stripped
-		// base id (`docId` carries a `::r<n>` buffer suffix).
-		if (dualPaneSource === "pdf") {
-			onOpenTranslationTab?.(
-				baseDocId,
-				paperAbsPath ?? null,
-				paperTitle ?? null,
-			);
-			return;
-		}
-		if (!paperAbsPath) {
-			notifyError(t("pdf.latexTranslation.missingPaperPath"));
-			return;
-		}
-		void openLatexTranslationTab(
-			baseDocId,
-			paperAbsPath,
-			basenameOf(paperAbsPath),
-		);
+		// base id (`docId` carries a `::r<n>` buffer suffix). The LaTeX vs PDF
+		// source choice lives in `openTranslationTab`.
+		onOpenTranslationTab?.(baseDocId, paperAbsPath ?? null, paperTitle ?? null);
 	}, [
 		plainViewer,
+		latexTranslateRunning,
 		displayMode,
-		dualPaneSource,
 		toggleLayoutTranslate,
 		onOpenTranslationTab,
 		baseDocId,
 		paperAbsPath,
 		paperTitle,
-		t,
 	]);
 
 	const applyJevHighlights = useCallback(
@@ -1788,6 +1771,7 @@ function PdfViewerInner({
 					layoutTranslateLabel={layoutTranslateLabel}
 					layoutTranslateProgress={layoutTranslateProgress}
 					onToggleLayoutTranslate={handleToggleLayoutTranslateWithDualPane}
+					latexTranslateRunning={latexTranslateRunning}
 					isRemotePaper={isRemotePaper}
 					onImportToLibrary={handleImportToLibrary}
 					importBusy={importBusy}

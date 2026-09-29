@@ -51,6 +51,7 @@ import {
 	COMMERCIAL_MT_PROVIDER_IDS,
 	type CommercialMtProbeMap,
 	DEFAULT_TRANSLATE_PROMPT_TEMPLATE,
+	type DualPaneSource,
 	FREE_MT_PROVIDER_IDS,
 	type FreeMtProbeMap,
 	type FreeMtProbeStatus,
@@ -63,6 +64,7 @@ import {
 	maskTranslateApiKey,
 	probeCommercialMtProvider,
 	probeFreeMtProviders,
+	type TranslationDisplayMode,
 } from "@/lib/translate";
 import {
 	EMPTY_TRANSLATE_PROVIDER_CONFIG,
@@ -437,16 +439,6 @@ export function TranslatePane({
 					/>
 				</SettingsRow>
 				<SettingsRow
-					label={t("translate.displayMode.label")}
-					htmlFor="translate-dual-pane"
-				>
-					<Switch
-						id="translate-dual-pane"
-						checked={tr.dualPaneTranslate}
-						onCheckedChange={(v) => patchTranslate({ dualPaneTranslate: v })}
-					/>
-				</SettingsRow>
-				<SettingsRow
 					label={t("translate.layoutConcurrency.label")}
 					description={t("translate.layoutConcurrency.description")}
 				>
@@ -468,6 +460,52 @@ export function TranslatePane({
 						</SelectContent>
 					</Select>
 				</SettingsRow>
+				<SettingsRow label={t("translate.displayMode.label")}>
+					<Select
+						value={tr.displayMode}
+						onValueChange={(v) =>
+							patchTranslate({
+								displayMode: v as TranslationDisplayMode,
+							})
+						}
+					>
+						<SelectTrigger size="sm" className="min-w-[160px] max-w-[220px]">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="overlay">
+								{t("translate.displayMode.overlay")}
+							</SelectItem>
+							<SelectItem value="dualPane">
+								{t("translate.displayMode.dualPane")}
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				</SettingsRow>
+				{tr.displayMode === "dualPane" && (
+					<SettingsRow label={t("translate.dualPaneSource.label")}>
+						<Select
+							value={tr.dualPaneSource}
+							onValueChange={(v) =>
+								patchTranslate({
+									dualPaneSource: v as DualPaneSource,
+								})
+							}
+						>
+							<SelectTrigger size="sm" className="min-w-[160px] max-w-[220px]">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="pdf">
+									{t("translate.dualPaneSource.pdf")}
+								</SelectItem>
+								<SelectItem value="latex">
+									{t("translate.dualPaneSource.latex")}
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					</SettingsRow>
+				)}
 			</SettingsGroup>
 
 			<div className="mb-5">

@@ -70,6 +70,7 @@ const KIND_ICONS: Partial<Record<BackgroundTaskKind, BackgroundTaskIcon>> = {
 	connectorSync: "plug",
 	recognizeMetadata: "scan",
 	latexCompile: "fileCode",
+	latexTranslate: "fileCode",
 	paperRead: "read",
 };
 

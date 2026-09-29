@@ -59,13 +59,14 @@
 			"tabTitle": "译文 – {{title}}"
 		},
 		"latexTranslation": {
-			"desktopOnly": "LaTeX 翻译仅在桌面端可用。",
-			"noSource": "该论文没有可翻译的本地 LaTeX 源。",
+			"desktopOnly": "LaTeX 源码翻译仅在本地可用。",
+			"noSource": "该论文没有可翻译的本地 LaTeX 源码。",
 			"missingPaperPath": "论文路径缺失，无法启动 LaTeX 翻译。",
-			"translating": "正在翻译 LaTeX 源…",
+			"translating": "正在翻译 LaTeX 源码…",
 			"compiling": "正在编译翻译后的 LaTeX…",
-			"compileFailed": "编译翻译后的 LaTeX 失败，请检查是否已安装 TeX 引擎。",
-			"tabTitle": "LaTeX 译文"
+			"compileFailed": "LaTeX 编译失败。请查看输出面板中的日志。",
+			"fallbackToLayout": "未找到 LaTeX 源码，已改用 PDF 版式翻译。",
+			"tabTitle": "翻译（LaTeX 源码）"
 		}
 	},
 	"pdfAsk": {
