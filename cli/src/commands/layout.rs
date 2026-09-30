@@ -230,6 +230,8 @@ async fn translate(
     use futures_util::{stream, StreamExt};
 
     let worker_count = jobs.clamp(1, 8);
+    let paper_workers = if provider == "agent" { worker_count } else { 1 };
+    let unit_workers = if provider == "agent" { 1 } else { worker_count };
     let vault_for_tasks = vault.clone();
     let target = target.to_string();
     let source = source.to_string();
@@ -250,7 +252,7 @@ async fn translate(
                 &target,
                 &source,
                 &provider,
-                1,
+                unit_workers,
                 force,
             )
             .await
@@ -260,7 +262,7 @@ async fn translate(
             }
         }
     }))
-    .buffer_unordered(worker_count)
+    .buffer_unordered(paper_workers)
     .collect::<Vec<_>>()
     .await;
 
