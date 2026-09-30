@@ -37,9 +37,9 @@ const MAX_ZOOM_SETTLE_FRAMES = 16;
  * Zoom gestures (wheel / pinch) step the level many times per second; pushing
  * every step to the partner re-rasterizes both panes on the main thread and
  * the visible alignment only lands anyway. Land the partner once, this long
- * after the last step.
+ * after a short idle window so the partner does not re-rasterize on every wheel tick.
  */
-const ZOOM_SYNC_SETTLE_MS = 120;
+const ZOOM_SYNC_SETTLE_MS = 48;
 
 export type PdfScrollPosition = {
 	x: number;

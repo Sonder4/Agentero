@@ -17,6 +17,7 @@ import {
 	listTranslatableLayoutRegions,
 	parseLayoutTranslateSidecar,
 	persistLayoutTranslateSidecarBestEffort,
+	sanitizeAgentTranslationText,
 	toLayoutTranslateItems,
 	translateServiceKey,
 } from "@/lib/pdf/layout/layout-translate";
@@ -35,6 +36,24 @@ vi.mock("@/lib/vault", () => ({
 	readVaultFile: vi.fn(),
 	writeVaultFile: vi.fn(),
 }));
+
+describe("sanitizeAgentTranslationText", () => {
+	it("removes provider retry chatter without changing translation text", () => {
+		expect(
+			sanitizeAgentTranslationText(
+				"Retrying (attempt 1/3, waiting 2s)...Retrying (attempt 2/3, waiting 4s)...Retry finished, resuming.\n视觉变换器在图像识别中表现良好。",
+			),
+		).toBe("视觉变换器在图像识别中表现良好。");
+	});
+
+	it("returns empty text when the response only contains retry chatter", () => {
+		expect(
+			sanitizeAgentTranslationText(
+				"Retrying (attempt 1/3, waiting 2s)...Retry finished, resuming.",
+			),
+		).toBe("");
+	});
+});
 
 function region(
 	partial: Partial<PdfLayoutRegion> &

@@ -65,7 +65,15 @@ pub enum LayoutCmd {
         /// Source language (default auto).
         #[arg(long = "from", value_name = "LANG", default_value = "auto")]
         from: String,
-        /// Pi agent workers translating at once (1–8, default 4).
+        /// Translation provider (default agent; AGENTERO_TRANSLATE_PROVIDER also supported).
+        #[arg(
+            long = "provider",
+            value_name = "ID",
+            default_value = "agent",
+            env = "AGENTERO_TRANSLATE_PROVIDER",
+            value_parser = ["agent", "google", "googleapi", "deeplx", "huoshanweb", "tencenttransmart"]
+        )]
+        provider: String,
         #[arg(long = "jobs", value_name = "N", default_value_t = 4)]
         jobs: usize,
         /// Ignore an existing translation sidecar.
@@ -87,9 +95,10 @@ pub async fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError
             r#ref,
             to,
             from,
+            provider,
             jobs,
             force,
-        } => translate(globals, r#ref.as_deref(), &to, &from, jobs, force).await,
+        } => translate(globals, r#ref.as_deref(), &to, &from, &provider, jobs, force).await,
     }
 }
 
@@ -212,6 +221,7 @@ async fn translate(
     paper_ref: Option<&str>,
     target: &str,
     source: &str,
+    provider: &str,
     jobs: usize,
     force: bool,
 ) -> Result<Value, CliError> {
@@ -232,6 +242,7 @@ async fn translate(
             &paper.path,
             target,
             source,
+            provider,
             jobs,
             force,
         )

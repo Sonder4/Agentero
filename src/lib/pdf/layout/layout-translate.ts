@@ -4,7 +4,12 @@
  */
 
 import i18n from "@/i18n";
-import { listenAgentCompleted, listenAgentFailed, runOnce } from "@/lib/agent";
+import {
+	cancelAgentRun,
+	listenAgentCompleted,
+	listenAgentFailed,
+	runOnce,
+} from "@/lib/agent";
 import { errorText } from "@/lib/core/error";
 import { logger } from "@/lib/core/logger";
 import { LAYOUT_SIDEBAR_MIN_SCORE } from "@/lib/pdf/layout/constants";
@@ -56,6 +61,20 @@ import type {
 	TranslateSettings,
 } from "@/lib/translate/types";
 import { joinVaultPath, readVaultFile, writeVaultFile } from "@/lib/vault";
+
+const AGENT_TRANSLATION_TIMEOUT_MS = 180_000;
+const AGENT_RETRY_LOG_RE =
+	/Retrying\s*\(attempt\s*\d+\s*\/\s*\d+\s*,\s*waiting\s*\d+s\)\s*\.\.\.|Retry\s+finished,\s*resuming\.?/gi;
+
+/** Remove ACP/provider retry chatter accidentally surfaced as assistant text. */
+export function sanitizeAgentTranslationText(value: string): string {
+	return value
+		.replace(AGENT_RETRY_LOG_RE, "")
+		.replace(/(?:^|\n)\s*(?:retrying|retry finished|resuming)[^\n]*/gi, "")
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}
 
 /** Soft cap per block to keep free-MT requests reasonable. */
 export const LAYOUT_TRANSLATE_MAX_CHARS = 2500;
@@ -663,13 +682,31 @@ async function resolveLayoutTranslateAgentOpts(options: {
 				});
 				const sessionId = accepted.sessionId;
 				return await new Promise<string>((resolve, reject) => {
+					let settled = false;
+					let timeoutId: ReturnType<typeof setTimeout> | null = null;
 					const unsubs: Array<() => void> = [];
 					const cleanup = () => {
-						for (const u of unsubs) u();
+						if (timeoutId != null) clearTimeout(timeoutId);
+						for (const unsubscribe of unsubs) unsubscribe();
 					};
+					const settle = (callback: () => void) => {
+						if (settled) return;
+						settled = true;
+						cleanup();
+						callback();
+					};
+					timeoutId = setTimeout(() => {
+						void cancelAgentRun(sessionId).catch(() => undefined);
+						if (reuseSession)
+							evictAgentTranslateSessionId(paperKey, agentId, modelId);
+						settle(() =>
+							reject(
+								new Error("Agent translation timed out after 180 seconds"),
+							),
+						);
+					}, AGENT_TRANSLATION_TIMEOUT_MS);
 					void listenAgentCompleted((ev) => {
 						if (ev.sessionId !== sessionId) return;
-						cleanup();
 						if (
 							reuseSession &&
 							ev.providerSessionId &&
@@ -682,15 +719,27 @@ async function resolveLayoutTranslateAgentOpts(options: {
 								ev.providerSessionId,
 							);
 						}
-						resolve((ev.content ?? "").trim());
-					}).then((u) => unsubs.push(u));
+						const content = sanitizeAgentTranslationText(ev.content ?? "");
+						settle(() =>
+							content
+								? resolve(content)
+								: reject(new Error("Agent returned an empty translation")),
+						);
+					}).then((unsubscribe) => {
+						if (settled) unsubscribe();
+						else unsubs.push(unsubscribe);
+					});
 					void listenAgentFailed((ev) => {
 						if (ev.sessionId !== sessionId) return;
-						cleanup();
 						if (reuseSession)
 							evictAgentTranslateSessionId(paperKey, agentId, modelId);
-						reject(new Error(ev.error || "Agent translation failed"));
-					}).then((u) => unsubs.push(u));
+						settle(() =>
+							reject(new Error(ev.error || "Agent translation failed")),
+						);
+					}).then((unsubscribe) => {
+						if (settled) unsubscribe();
+						else unsubs.push(unsubscribe);
+					});
 				});
 			},
 		},
@@ -969,7 +1018,7 @@ export async function runLayoutRegionTranslate(options: {
 			},
 			agentOpts,
 		);
-		return translated.trim();
+		return sanitizeAgentTranslationText(translated.trim());
 	};
 
 	/** Restore masked tokens; retry unmasked when the engine ate a placeholder. */

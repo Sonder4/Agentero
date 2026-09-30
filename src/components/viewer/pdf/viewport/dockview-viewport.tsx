@@ -224,10 +224,10 @@ export function DockviewViewport({
 					// Chromium's scroll anchoring adjust this custom virtual viewport can
 					// move it to an endpoint when the rendered range changes.
 					overflowAnchor: "none",
-					padding: `${viewportGap}px`,
-					// The shorthand above would clobber a caller's paddingRight; merge
-					// the reserved rail gutter explicitly.
-					paddingRight: `${viewportGap + rightGutter}px`,
+					padding: `${viewportGap + Math.ceil(rightGutter / 2)}px`,
+					// Reserve the comment rail symmetrically so the paper remains centered
+					// in the readable area instead of being pushed to the left.
+					paddingRight: `${viewportGap + Math.floor(rightGutter / 2)}px`,
 				}}
 			>
 				{!isGated && children}

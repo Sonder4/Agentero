@@ -49,6 +49,7 @@ pub async fn translate_paper_dir(
     paper_rel: &str,
     target_lang: &str,
     source_lang: &str,
+    provider: &str,
     concurrency: usize,
     force: bool,
 ) -> Result<Option<LayoutTranslateOutcome>, AppError> {
@@ -57,8 +58,22 @@ pub async fn translate_paper_dir(
     if !raw_path.is_file() {
         return Ok(None);
     }
-    let provider_id = "agent".to_string();
-    let service_key = "agent:pi:default".to_string();
+    let provider_id = provider.trim().to_ascii_lowercase();
+    if provider_id.is_empty() {
+        return Err(AppError::message("translation provider cannot be empty"));
+    }
+    if provider_id != "agent"
+        && !crate::features::translate::FREE_PROVIDERS.contains(&provider_id.as_str())
+    {
+        return Err(AppError::message(format!(
+            "unsupported layout translation provider: {provider_id}"
+        )));
+    }
+    let service_key = if provider_id == "agent" {
+        "agent:pi:default".to_string()
+    } else {
+        provider_id.clone()
+    };
     let units = load_units(&raw_path)?;
     if units.is_empty() {
         write_sidecar(
@@ -133,7 +148,15 @@ pub async fn translate_paper_dir(
     let mut first_error: Option<String> = None;
     let workers = concurrency.clamp(1, 8);
     let groups = batches(&pending);
-    let first_pass = translate_batches(&groups, workers, source_lang, target_lang, vault).await;
+    let first_pass = translate_batches(
+        &groups,
+        workers,
+        source_lang,
+        target_lang,
+        &provider_id,
+        vault,
+    )
+    .await;
     let mut retry_units = Vec::new();
     for (batch, result) in groups.iter().zip(first_pass) {
         match result {
@@ -161,7 +184,15 @@ pub async fn translate_paper_dir(
     }
     if !retry_units.is_empty() {
         let singles: Vec<Vec<Unit>> = retry_units.iter().cloned().map(|unit| vec![unit]).collect();
-        let retried = translate_batches(&singles, workers, source_lang, target_lang, vault).await;
+        let retried = translate_batches(
+            &singles,
+            workers,
+            source_lang,
+            target_lang,
+            &provider_id,
+            vault,
+        )
+        .await;
         for (unit, result) in retry_units.iter().zip(retried) {
             match result {
                 Ok(texts) => match texts.first().map(|text| text.trim()).filter(|text| !text.is_empty()) {
@@ -313,22 +344,25 @@ async fn translate_batches(
     workers: usize,
     source_lang: &str,
     target_lang: &str,
+    provider: &str,
     cwd: &Path,
 ) -> Vec<Result<Vec<String>, AppError>> {
     use futures_util::stream::{self, StreamExt};
 
     let source_lang = source_lang.to_string();
     let target_lang = target_lang.to_string();
+    let provider = provider.to_string();
     let cwd = cwd.to_path_buf();
     let mut results = stream::iter(groups.iter().cloned().enumerate())
         .map(|(index, batch)| {
             let source_lang = source_lang.clone();
             let target_lang = target_lang.clone();
+            let provider = provider.clone();
             let cwd = cwd.clone();
             async move {
                 (
                     index,
-                    translate_batch(&batch, &source_lang, &target_lang, &cwd).await,
+                    translate_batch(&batch, &source_lang, &target_lang, &provider, &cwd).await,
                 )
             }
         })
@@ -343,8 +377,31 @@ async fn translate_batch(
     batch: &[Unit],
     source_lang: &str,
     target_lang: &str,
+    provider: &str,
     cwd: &Path,
 ) -> Result<Vec<String>, AppError> {
+    if provider != "agent" {
+        let mut translated = Vec::with_capacity(batch.len());
+        for unit in batch {
+            let result = crate::features::translate::translate_text(
+                crate::features::translate::TranslateTextArgs {
+                    text: unit.source.clone(),
+                    source_lang: source_lang.to_string(),
+                    target_lang: target_lang.to_string(),
+                    provider: provider.to_string(),
+                    api_key: None,
+                    base_url: None,
+                    region: None,
+                    model: None,
+                    custom_prompt: None,
+                    timeout_ms: Some(30_000),
+                },
+            )
+            .await?;
+            translated.push(result.text);
+        }
+        return Ok(translated);
+    }
     let prompt = translation_prompt(batch, source_lang, target_lang);
     let translated = pi_agent::translate_with_pi(&prompt, cwd).await?;
     if batch.len() == 1 {
