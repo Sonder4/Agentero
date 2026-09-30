@@ -348,23 +348,28 @@ fn load_cache(
         return Vec::new();
     };
     let source = raw.get("source");
-    let matches = source
-        .and_then(|s| s.get("providerId"))
+    let language_matches = source
+        .and_then(|s| s.get("sourceLang"))
         .and_then(Value::as_str)
-        == Some(provider)
-        && source
-            .and_then(|s| s.get("sourceLang"))
-            .and_then(Value::as_str)
-            == Some(source_lang)
+        == Some(source_lang)
         && source
             .and_then(|s| s.get("targetLang"))
             .and_then(Value::as_str)
-            == Some(target_lang)
+            == Some(target_lang);
+    let exact_matches = language_matches
+        && source
+            .and_then(|s| s.get("providerId"))
+            .and_then(Value::as_str)
+            == Some(provider)
         && source
             .and_then(|s| s.get("serviceKey"))
             .and_then(Value::as_str)
             == Some(service_key);
-    if !matches {
+    // Public MT providers are interchangeable for cache purposes when the
+    // source/target pair matches; this lets a healthy provider repair a partial
+    // sidecar left by a rate-limited provider without retranslating 70k blocks.
+    let fallback_matches = provider != "agent" && language_matches;
+    if !exact_matches && !fallback_matches {
         return Vec::new();
     }
     raw.get("items")
