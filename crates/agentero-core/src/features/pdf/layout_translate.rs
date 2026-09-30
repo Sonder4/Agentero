@@ -377,6 +377,25 @@ async fn translate_batches(
     results.into_iter().map(|(_, result)| result).collect()
 }
 
+fn split_source_chunks(source: &str, max_chars: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for word in source.split_whitespace() {
+        let extra = if current.is_empty() { 0 } else { 1 };
+        if !current.is_empty() && current.chars().count() + extra + word.chars().count() > max_chars {
+            chunks.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
 async fn translate_batch(
     batch: &[Unit],
     source_lang: &str,
@@ -387,22 +406,30 @@ async fn translate_batch(
     if provider != "agent" {
         let mut translated = Vec::with_capacity(batch.len());
         for unit in batch {
-            let result = crate::features::translate::translate_text(
-                crate::features::translate::TranslateTextArgs {
-                    text: unit.source.clone(),
-                    source_lang: source_lang.to_string(),
-                    target_lang: target_lang.to_string(),
-                    provider: provider.to_string(),
-                    api_key: None,
-                    base_url: None,
-                    region: None,
-                    model: None,
-                    custom_prompt: None,
-                    timeout_ms: Some(30_000),
-                },
-            )
-            .await?;
-            translated.push(result.text);
+            let chunks = split_source_chunks(&unit.source, crate::features::translate::MAX_TEXT_CHARS - 200);
+            let mut joined = String::new();
+            for chunk in chunks {
+                let result = crate::features::translate::translate_text(
+                    crate::features::translate::TranslateTextArgs {
+                        text: chunk,
+                        source_lang: source_lang.to_string(),
+                        target_lang: target_lang.to_string(),
+                        provider: provider.to_string(),
+                        api_key: None,
+                        base_url: None,
+                        region: None,
+                        model: None,
+                        custom_prompt: None,
+                        timeout_ms: Some(30_000),
+                    },
+                )
+                .await?;
+                if !joined.is_empty() {
+                    joined.push(' ');
+                }
+                joined.push_str(&result.text);
+            }
+            translated.push(joined);
         }
         return Ok(translated);
     }
