@@ -147,7 +147,11 @@ pub async fn translate_paper_dir(
     let mut failed = 0usize;
     let mut first_error: Option<String> = None;
     let workers = concurrency.clamp(1, 8);
-    let groups = batches(&pending);
+    let groups = if provider_id == "agent" {
+        batches(&pending)
+    } else {
+        pending.iter().cloned().map(|unit| vec![unit]).collect()
+    };
     let first_pass = translate_batches(
         &groups,
         workers,
