@@ -70,7 +70,10 @@ const AGENT_RETRY_LOG_RE =
 export function sanitizeAgentTranslationText(value: string): string {
 	return value
 		.replace(AGENT_RETRY_LOG_RE, "")
-		.replace(/(?:^|\n)\s*(?:retrying|retry finished|resuming)[^\n]*/gi, "")
+		.replace(
+			/(?:^|\n)\s*(?:retrying\s*\(attempt\s*\d+\s*\/\s*\d+\s*,\s*waiting\s*\d+s\)\.\.\.|retry\s+finished,\s*resuming\.?)\s*(?=\n|$)/gi,
+			"",
+		)
 		.replace(/[ \t]{2,}/g, " ")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();
@@ -420,6 +423,9 @@ function parseLayoutTranslateSidecarItem(
 	}
 	const parsedBbox = parseBbox(bbox);
 	if (!parsedBbox) return null;
+	const cleanTranslated = sanitizeAgentTranslationText(translated);
+	// Reject sidecars containing provider retry chatter written by older builds.
+	if (cleanTranslated !== translated.trim()) return null;
 	return {
 		id,
 		pageIndex,
@@ -427,7 +433,7 @@ function parseLayoutTranslateSidecarItem(
 		kind: kind as PdfLayoutRegion["kind"],
 		readingOrder,
 		source,
-		translated,
+		translated: cleanTranslated,
 	};
 }
 
@@ -654,6 +660,7 @@ async function resolveLayoutTranslateAgentOpts(options: {
 	paperKey: string | null | undefined;
 	vaultPath: string | null | undefined;
 	reuseSession: boolean;
+	signal?: AbortSignal;
 }): Promise<TranslateRunOptions | undefined> {
 	const settings = loadSettings();
 	if (settings.translate.provider !== "agent") return undefined;
@@ -663,84 +670,157 @@ async function resolveLayoutTranslateAgentOpts(options: {
 	}
 	const agentId = resolved.agentId;
 	const modelId = resolved.modelId;
-	const { paperKey, vaultPath, reuseSession } = options;
+	const { paperKey, vaultPath, reuseSession, signal } = options;
 	return {
 		agent: {
 			runOnce: async (prompt: string) => {
 				const cachedSessionId = reuseSession
 					? getAgentTranslateSessionId(paperKey, agentId, modelId)
 					: undefined;
-				const accepted = await runOnce({
-					prompt,
-					agentId,
-					modelId,
-					sessionId: cachedSessionId ?? undefined,
-					vaultPath: vaultPath ?? undefined,
-					workflow: "pdf-layout-translate",
-					permissionMode: "auto",
-					hideFromChatHistory: true,
+				if (signal?.aborted) {
+					throw new DOMException("The translation was cancelled", "AbortError");
+				}
+
+				let sessionId: string | undefined;
+				let settled = false;
+				let timeoutId: ReturnType<typeof setTimeout> | null = null;
+				const unsubs: Array<() => void> = [];
+				const completedEvents: Parameters<
+					Parameters<typeof listenAgentCompleted>[0]
+				>[0][] = [];
+				const failedEvents: Parameters<
+					Parameters<typeof listenAgentFailed>[0]
+				>[0][] = [];
+				let resolveResult!: (value: string) => void;
+				let rejectResult!: (error: unknown) => void;
+				const result = new Promise<string>((resolve, reject) => {
+					resolveResult = resolve;
+					rejectResult = reject;
 				});
-				const sessionId = accepted.sessionId;
-				return await new Promise<string>((resolve, reject) => {
-					let settled = false;
-					let timeoutId: ReturnType<typeof setTimeout> | null = null;
-					const unsubs: Array<() => void> = [];
-					const cleanup = () => {
-						if (timeoutId != null) clearTimeout(timeoutId);
-						for (const unsubscribe of unsubs) unsubscribe();
-					};
-					const settle = (callback: () => void) => {
-						if (settled) return;
-						settled = true;
-						cleanup();
-						callback();
-					};
-					timeoutId = setTimeout(() => {
-						void cancelAgentRun(sessionId).catch(() => undefined);
+				const cleanup = () => {
+					if (timeoutId != null) clearTimeout(timeoutId);
+					for (const unsubscribe of unsubs) unsubscribe();
+					if (signal) signal.removeEventListener("abort", onAbort);
+				};
+				const settle = (callback: () => void) => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					callback();
+				};
+				const failCancelled = () => {
+					if (reuseSession)
+						evictAgentTranslateSessionId(paperKey, agentId, modelId);
+					void (sessionId
+						? cancelAgentRun(sessionId).catch(() => undefined)
+						: undefined);
+					settle(() =>
+						rejectResult(
+							new DOMException("The translation was cancelled", "AbortError"),
+						),
+					);
+				};
+				const onAbort = () => {
+					if (sessionId) void cancelAgentRun(sessionId).catch(() => undefined);
+					failCancelled();
+				};
+				const handleCompleted = (
+					ev: Parameters<Parameters<typeof listenAgentCompleted>[0]>[0],
+				) => {
+					if (!sessionId) {
+						completedEvents.push(ev);
+						return;
+					}
+					if (ev.sessionId !== sessionId) return;
+					if (ev.stopReason === "cancelled") {
+						failCancelled();
+						return;
+					}
+					if (ev.stopReason === "error") {
 						if (reuseSession)
 							evictAgentTranslateSessionId(paperKey, agentId, modelId);
-						settle(() =>
-							reject(
-								new Error("Agent translation timed out after 180 seconds"),
-							),
+						settle(() => rejectResult(new Error("Agent translation failed")));
+						return;
+					}
+					if (reuseSession && ev.providerSessionId) {
+						setAgentTranslateSessionId(
+							paperKey,
+							agentId,
+							modelId,
+							ev.providerSessionId,
 						);
-					}, AGENT_TRANSLATION_TIMEOUT_MS);
-					void listenAgentCompleted((ev) => {
-						if (ev.sessionId !== sessionId) return;
-						if (
-							reuseSession &&
-							ev.providerSessionId &&
-							ev.stopReason !== "cancelled"
-						) {
-							setAgentTranslateSessionId(
-								paperKey,
-								agentId,
-								modelId,
-								ev.providerSessionId,
-							);
-						}
-						const content = sanitizeAgentTranslationText(ev.content ?? "");
-						settle(() =>
-							content
-								? resolve(content)
-								: reject(new Error("Agent returned an empty translation")),
-						);
-					}).then((unsubscribe) => {
-						if (settled) unsubscribe();
-						else unsubs.push(unsubscribe);
+					}
+					const content = sanitizeAgentTranslationText(ev.content ?? "");
+					settle(() =>
+						content
+							? resolveResult(content)
+							: rejectResult(new Error("Agent returned an empty translation")),
+					);
+				};
+				const handleFailed = (
+					ev: Parameters<Parameters<typeof listenAgentFailed>[0]>[0],
+				) => {
+					if (!sessionId) {
+						failedEvents.push(ev);
+						return;
+					}
+					if (ev.sessionId !== sessionId) return;
+					if (reuseSession)
+						evictAgentTranslateSessionId(paperKey, agentId, modelId);
+					settle(() =>
+						rejectResult(new Error(ev.error || "Agent translation failed")),
+					);
+				};
+				if (signal) signal.addEventListener("abort", onAbort, { once: true });
+				const registrations = await Promise.allSettled([
+					listenAgentCompleted(handleCompleted),
+					listenAgentFailed(handleFailed),
+				]);
+				let registrationError: unknown;
+				for (const registration of registrations) {
+					if (registration.status === "fulfilled")
+						unsubs.push(registration.value);
+					else registrationError ??= registration.reason;
+				}
+				if (registrationError !== undefined) {
+					cleanup();
+					throw registrationError;
+				}
+				if (signal?.aborted) {
+					failCancelled();
+					return result;
+				}
+				let accepted: Awaited<ReturnType<typeof runOnce>>;
+				try {
+					accepted = await runOnce({
+						prompt,
+						agentId,
+						modelId,
+						sessionId: cachedSessionId ?? undefined,
+						vaultPath: vaultPath ?? undefined,
+						workflow: "pdf-layout-translate",
+						permissionMode: "auto",
+						hideFromChatHistory: true,
 					});
-					void listenAgentFailed((ev) => {
-						if (ev.sessionId !== sessionId) return;
-						if (reuseSession)
-							evictAgentTranslateSessionId(paperKey, agentId, modelId);
-						settle(() =>
-							reject(new Error(ev.error || "Agent translation failed")),
-						);
-					}).then((unsubscribe) => {
-						if (settled) unsubscribe();
-						else unsubs.push(unsubscribe);
-					});
-				});
+				} catch (error) {
+					cleanup();
+					throw error;
+				}
+				sessionId = accepted.sessionId;
+				timeoutId = setTimeout(() => {
+					void cancelAgentRun(accepted.sessionId).catch(() => undefined);
+					if (reuseSession)
+						evictAgentTranslateSessionId(paperKey, agentId, modelId);
+					settle(() =>
+						rejectResult(
+							new Error("Agent translation timed out after 180 seconds"),
+						),
+					);
+				}, AGENT_TRANSLATION_TIMEOUT_MS);
+				for (const ev of completedEvents) handleCompleted(ev);
+				for (const ev of failedEvents) handleFailed(ev);
+				if (signal?.aborted) failCancelled();
+				return result;
 			},
 		},
 	};
@@ -887,6 +967,7 @@ export async function runLayoutRegionTranslate(options: {
 		paperKey: options.paperKey,
 		vaultPath: options.vaultPath,
 		reuseSession: configuredConcurrency === 1,
+		signal: options.signal,
 	});
 	// Agent is heavy — serialize; free/commercial MT keeps a small pool.
 	const concurrency = configuredConcurrency;

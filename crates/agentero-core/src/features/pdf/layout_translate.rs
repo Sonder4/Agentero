@@ -52,6 +52,7 @@ pub async fn translate_paper_dir(
     provider: &str,
     concurrency: usize,
     force: bool,
+    provider_config: Option<&crate::features::translate::PersistedTranslateProviderConfig>,
 ) -> Result<Option<LayoutTranslateOutcome>, AppError> {
     let paper_dir = vault.join(paper_rel);
     let raw_path = paper_dir.join("source").join("layout.json");
@@ -64,15 +65,36 @@ pub async fn translate_paper_dir(
     }
     if provider_id != "agent"
         && !crate::features::translate::FREE_PROVIDERS.contains(&provider_id.as_str())
+        && !crate::features::translate::COMMERCIAL_PROVIDERS.contains(&provider_id.as_str())
     {
         return Err(AppError::message(format!(
             "unsupported layout translation provider: {provider_id}"
         )));
     }
     let service_key = if provider_id == "agent" {
-        "agent:pi:default".to_string()
+        let settings = crate::features::translate::load_persisted_translate_settings();
+        format!(
+            "agent:{}:{}",
+            settings
+                .as_ref()
+                .map(|s| s.agent_id.trim())
+                .filter(|v| !v.is_empty())
+                .unwrap_or("default"),
+            settings
+                .as_ref()
+                .map(|s| s.model_id.trim())
+                .filter(|v| !v.is_empty())
+                .unwrap_or("default")
+        )
     } else {
-        provider_id.clone()
+        let cfg = provider_config;
+        [
+            provider_id.as_str(),
+            cfg.map(|c| c.base_url.trim()).unwrap_or(""),
+            cfg.map(|c| c.region.trim()).unwrap_or(""),
+            cfg.map(|c| c.model.trim()).unwrap_or(""),
+        ]
+        .join(":")
     };
     let units = load_units(&raw_path)?;
     if units.is_empty() {
@@ -109,7 +131,9 @@ pub async fn translate_paper_dir(
     let mut pending = Vec::new();
     let mut skipped = 0usize;
     for unit in units {
-        if crate::features::translate::looks_mostly_cjk(&unit.source) {
+        if is_chinese_target(target_lang)
+            && crate::features::translate::looks_mostly_cjk(&unit.source)
+        {
             skipped += 1;
             translated.push(item_json(&unit, &unit.source));
             continue;
@@ -159,6 +183,7 @@ pub async fn translate_paper_dir(
         target_lang,
         &provider_id,
         vault,
+        provider_config,
     )
     .await;
     let mut retry_units = Vec::new();
@@ -195,11 +220,16 @@ pub async fn translate_paper_dir(
             target_lang,
             &provider_id,
             vault,
+            provider_config,
         )
         .await;
         for (unit, result) in retry_units.iter().zip(retried) {
             match result {
-                Ok(texts) => match texts.first().map(|text| text.trim()).filter(|text| !text.is_empty()) {
+                Ok(texts) => match texts
+                    .first()
+                    .map(|text| text.trim())
+                    .filter(|text| !text.is_empty())
+                {
                     Some(text) => translated.push(item_json(unit, text)),
                     None => failed += 1,
                 },
@@ -234,6 +264,11 @@ pub async fn translate_paper_dir(
         target_lang: target_lang.to_string(),
         error: first_error,
     }))
+}
+
+fn is_chinese_target(target: &str) -> bool {
+    let target = target.trim().to_ascii_lowercase();
+    target == "zh" || target.starts_with("zh-") || target.starts_with("zh_")
 }
 
 fn empty_outcome(
@@ -311,16 +346,41 @@ fn load_cache(
         return Vec::new();
     };
     let source = raw.get("source");
-    let matches = source.and_then(|s| s.get("providerId")).and_then(Value::as_str) == Some(provider)
-        && source.and_then(|s| s.get("sourceLang")).and_then(Value::as_str) == Some(source_lang)
-        && source.and_then(|s| s.get("targetLang")).and_then(Value::as_str) == Some(target_lang)
-        && source.and_then(|s| s.get("serviceKey")).and_then(Value::as_str) == Some(service_key);
+    let matches = source
+        .and_then(|s| s.get("providerId"))
+        .and_then(Value::as_str)
+        == Some(provider)
+        && source
+            .and_then(|s| s.get("sourceLang"))
+            .and_then(Value::as_str)
+            == Some(source_lang)
+        && source
+            .and_then(|s| s.get("targetLang"))
+            .and_then(Value::as_str)
+            == Some(target_lang)
+        && source
+            .and_then(|s| s.get("serviceKey"))
+            .and_then(Value::as_str)
+            == Some(service_key);
     if !matches {
         return Vec::new();
     }
     raw.get("items")
         .and_then(Value::as_array)
-        .cloned()
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.get("id").and_then(Value::as_str).is_some()
+                        && item.get("source").and_then(Value::as_str).is_some()
+                        && item
+                            .get("translated")
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| !text.trim().is_empty())
+                })
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -350,6 +410,7 @@ async fn translate_batches(
     target_lang: &str,
     provider: &str,
     cwd: &Path,
+    provider_config: Option<&crate::features::translate::PersistedTranslateProviderConfig>,
 ) -> Vec<Result<Vec<String>, AppError>> {
     use futures_util::stream::{self, StreamExt};
 
@@ -357,16 +418,26 @@ async fn translate_batches(
     let target_lang = target_lang.to_string();
     let provider = provider.to_string();
     let cwd = cwd.to_path_buf();
+    let provider_config = provider_config.cloned();
     let mut results = stream::iter(groups.iter().cloned().enumerate())
         .map(|(index, batch)| {
             let source_lang = source_lang.clone();
             let target_lang = target_lang.clone();
             let provider = provider.clone();
             let cwd = cwd.clone();
+            let provider_config = provider_config.clone();
             async move {
                 (
                     index,
-                    translate_batch(&batch, &source_lang, &target_lang, &provider, &cwd).await,
+                    translate_batch(
+                        &batch,
+                        &source_lang,
+                        &target_lang,
+                        &provider,
+                        &cwd,
+                        provider_config.as_ref(),
+                    )
+                    .await,
                 )
             }
         })
@@ -382,7 +453,8 @@ fn split_source_chunks(source: &str, max_chars: usize) -> Vec<String> {
     let mut current = String::new();
     for word in source.split_whitespace() {
         let extra = if current.is_empty() { 0 } else { 1 };
-        if !current.is_empty() && current.chars().count() + extra + word.chars().count() > max_chars {
+        if !current.is_empty() && current.chars().count() + extra + word.chars().count() > max_chars
+        {
             chunks.push(std::mem::take(&mut current));
         }
         if !current.is_empty() {
@@ -402,32 +474,62 @@ async fn translate_batch(
     target_lang: &str,
     provider: &str,
     cwd: &Path,
+    provider_config: Option<&crate::features::translate::PersistedTranslateProviderConfig>,
 ) -> Result<Vec<String>, AppError> {
     if provider != "agent" {
         let mut translated = Vec::with_capacity(batch.len());
         for unit in batch {
-            let chunks = split_source_chunks(&unit.source, crate::features::translate::MAX_TEXT_CHARS - 200);
+            let chunks = split_source_chunks(
+                &unit.source,
+                crate::features::translate::MAX_TEXT_CHARS - 200,
+            );
             let mut joined = String::new();
             for chunk in chunks {
-                let result = crate::features::translate::translate_text(
-                    crate::features::translate::TranslateTextArgs {
-                        text: chunk,
-                        source_lang: source_lang.to_string(),
-                        target_lang: target_lang.to_string(),
-                        provider: provider.to_string(),
-                        api_key: None,
-                        base_url: None,
-                        region: None,
-                        model: None,
-                        custom_prompt: None,
-                        timeout_ms: Some(30_000),
-                    },
-                )
-                .await?;
-                if !joined.is_empty() {
-                    joined.push(' ');
+                let mut chunk_result = None;
+                for attempt in 0..3 {
+                    match crate::features::translate::translate_text(
+                        crate::features::translate::TranslateTextArgs {
+                            text: chunk.clone(),
+                            source_lang: source_lang.to_string(),
+                            target_lang: target_lang.to_string(),
+                            provider: provider.to_string(),
+                            api_key: provider_config
+                                .map(|c| c.api_key.clone())
+                                .filter(|v| !v.trim().is_empty()),
+                            base_url: provider_config
+                                .map(|c| c.base_url.clone())
+                                .filter(|v| !v.trim().is_empty()),
+                            region: provider_config
+                                .map(|c| c.region.clone())
+                                .filter(|v| !v.trim().is_empty()),
+                            model: provider_config
+                                .map(|c| c.model.clone())
+                                .filter(|v| !v.trim().is_empty()),
+                            custom_prompt: None,
+                            timeout_ms: Some(30_000),
+                        },
+                    )
+                    .await
+                    {
+                        Ok(result) => {
+                            chunk_result = Some(result.text);
+                            break;
+                        }
+                        Err(_) if attempt < 2 => {
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                300 * (1u64 << attempt),
+                            ))
+                            .await;
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
-                joined.push_str(&result.text);
+                if let Some(result) = chunk_result {
+                    if !joined.is_empty() {
+                        joined.push(' ');
+                    }
+                    joined.push_str(&result);
+                }
             }
             translated.push(joined);
         }

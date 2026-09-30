@@ -5,6 +5,7 @@
 use crate::error::AppError;
 use crate::http;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::time::Duration;
 
 mod sources;
@@ -21,6 +22,51 @@ pub const BUILTIN_PROVIDER_ID: &str = "agentero";
 /// Wire marker returned when this build carries no built-in key.
 pub const ERR_NO_BUILTIN_KEY: &str = "translate.no_builtin_key";
 
+/// Translation provider settings persisted by the desktop Host. This deliberately
+/// mirrors only the stable JSON boundary, so headless callers reuse settings.json
+/// without depending on Tauri settings types.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PersistedTranslateSettings {
+    pub provider: String,
+    pub target_lang: String,
+    pub source_lang: String,
+    pub provider_configs: HashMap<String, PersistedTranslateProviderConfig>,
+    pub agent_id: String,
+    pub model_id: String,
+    pub custom_prompt: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PersistedTranslateProviderConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub region: String,
+    pub model: String,
+}
+
+/// Load the same settings file used by the Host. Missing or malformed settings
+/// are treated as absent so CLI commands retain their explicit defaults.
+pub fn load_persisted_translate_settings() -> Option<PersistedTranslateSettings> {
+    let text = std::fs::read_to_string(crate::paths::settings_path()).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&text).ok()?;
+    serde_json::from_value(root.get("translate").cloned()?).ok()
+}
+
+/// Resolve a provider config case-insensitively, including the historical
+/// `googlecloud` spelling and the UI's `googleCloud` spelling.
+pub fn persisted_provider_config<'a>(
+    settings: &'a PersistedTranslateSettings,
+    provider: &str,
+) -> Option<&'a PersistedTranslateProviderConfig> {
+    let wanted = provider.trim().to_ascii_lowercase();
+    settings
+        .provider_configs
+        .iter()
+        .find_map(|(id, cfg)| (id.trim().to_ascii_lowercase() == wanted).then_some(cfg))
+}
+
 /// Known free MT provider ids.
 pub const FREE_PROVIDERS: &[&str] = &[
     "google",
@@ -31,7 +77,7 @@ pub const FREE_PROVIDERS: &[&str] = &[
 ];
 
 /// Commercial BYOK provider ids configured in Settings → Translate.
-pub const COMMERCIAL_PROVIDERS: &[&str] = &["deepl", "azure", "googleCloud", "openaiCompatible"];
+pub const COMMERCIAL_PROVIDERS: &[&str] = &["deepl", "azure", "googlecloud", "openaicompatible"];
 
 /// Default free engines raced in parallel for best-effort zh-CN (NOTES abstract).
 /// First non-empty success wins; remaining in-flight requests are dropped.
@@ -401,6 +447,22 @@ mod tests {
         // Keep abstract-MT snappy: enough for slow success (~1.3s bench max);
         // parallel race → wall ≈ one timeout, not 3×.
         assert!((3_000..=8_000).contains(&FREE_MT_ZH_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn persisted_provider_config_accepts_ui_casing() {
+        let mut settings = PersistedTranslateSettings::default();
+        settings.provider_configs.insert(
+            "googleCloud".into(),
+            PersistedTranslateProviderConfig {
+                api_key: "secret".into(),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            persisted_provider_config(&settings, "googlecloud").map(|cfg| cfg.api_key.as_str()),
+            Some("secret")
+        );
     }
 
     #[test]

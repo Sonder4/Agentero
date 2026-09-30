@@ -65,15 +65,13 @@ pub enum LayoutCmd {
         /// Source language (default auto).
         #[arg(long = "from", value_name = "LANG", default_value = "auto")]
         from: String,
-        /// Translation provider (default agent; AGENTERO_TRANSLATE_PROVIDER also supported).
+        /// Translation provider (defaults to persisted Settings -> Translate provider).
         #[arg(
             long = "provider",
             value_name = "ID",
-            default_value = "agent",
-            env = "AGENTERO_TRANSLATE_PROVIDER",
-            value_parser = ["agent", "google", "googleapi", "deeplx", "huoshanweb", "tencenttransmart"]
+            env = "AGENTERO_TRANSLATE_PROVIDER"
         )]
-        provider: String,
+        provider: Option<String>,
         #[arg(long = "jobs", value_name = "N", default_value_t = 4)]
         jobs: usize,
         /// Ignore an existing translation sidecar.
@@ -98,7 +96,18 @@ pub async fn run(cmd: LayoutCmd, globals: &GlobalOpts) -> Result<Value, CliError
             provider,
             jobs,
             force,
-        } => translate(globals, r#ref.as_deref(), &to, &from, &provider, jobs, force).await,
+        } => {
+            translate(
+                globals,
+                r#ref.as_deref(),
+                &to,
+                &from,
+                provider.as_deref(),
+                jobs,
+                force,
+            )
+            .await
+        }
     }
 }
 
@@ -221,10 +230,32 @@ async fn translate(
     paper_ref: Option<&str>,
     target: &str,
     source: &str,
-    provider: &str,
+    provider: Option<&str>,
     jobs: usize,
     force: bool,
 ) -> Result<Value, CliError> {
+    let persisted = agentero_core::features::translate::load_persisted_translate_settings();
+    let provider = provider
+        .or_else(|| {
+            persisted
+                .as_ref()
+                .map(|settings| settings.provider.as_str())
+        })
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or("agent")
+        .trim()
+        .to_ascii_lowercase();
+    let provider = match provider.as_str() {
+        "microsoft" | "microsofttranslator" => "azure".to_string(),
+        "googlecloud" => "googlecloud".to_string(),
+        other => other.to_string(),
+    };
+    let provider_config = persisted
+        .as_ref()
+        .and_then(|settings| {
+            agentero_core::features::translate::persisted_provider_config(settings, &provider)
+        })
+        .cloned();
     let vault = resolve_vault(globals)?;
     let papers = target_papers(&vault, paper_ref, globals)?;
     use futures_util::{stream, StreamExt};
@@ -241,6 +272,7 @@ async fn translate(
         let target = target.clone();
         let source = source.clone();
         let provider = provider.clone();
+        let provider_config = provider_config.clone();
         async move {
             let path = paper.path.clone();
             if let Err(err) = layout_text::analyze_paper_dir(&vault, &path, false) {
@@ -254,6 +286,7 @@ async fn translate(
                 &provider,
                 unit_workers,
                 force,
+                provider_config.as_ref(),
             )
             .await
             {
