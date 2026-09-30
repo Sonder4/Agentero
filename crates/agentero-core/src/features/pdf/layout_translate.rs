@@ -86,7 +86,7 @@ pub async fn translate_paper_dir(
                 .filter(|v| !v.is_empty())
                 .unwrap_or("default")
         )
-    } else {
+    } else if crate::features::translate::COMMERCIAL_PROVIDERS.contains(&provider_id.as_str()) {
         let cfg = provider_config;
         [
             provider_id.as_str(),
@@ -95,6 +95,8 @@ pub async fn translate_paper_dir(
             cfg.map(|c| c.model.trim()).unwrap_or(""),
         ]
         .join(":")
+    } else {
+        provider_id.clone()
     };
     let units = load_units(&raw_path)?;
     if units.is_empty() {
