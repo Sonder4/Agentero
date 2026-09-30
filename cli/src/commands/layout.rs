@@ -227,36 +227,60 @@ async fn translate(
 ) -> Result<Value, CliError> {
     let vault = resolve_vault(globals)?;
     let papers = target_papers(&vault, paper_ref, globals)?;
+    use futures_util::{stream, StreamExt};
+
+    let worker_count = jobs.clamp(1, 8);
+    let vault_for_tasks = vault.clone();
+    let target = target.to_string();
+    let source = source.to_string();
+    let provider = provider.to_string();
+    let results = stream::iter(papers.into_iter().map(|paper| {
+        let vault = vault_for_tasks.clone();
+        let target = target.clone();
+        let source = source.clone();
+        let provider = provider.clone();
+        async move {
+            let path = paper.path.clone();
+            if let Err(err) = layout_text::analyze_paper_dir(&vault, &path, false) {
+                return (path, None, Some(err.to_string()));
+            }
+            match layout_translate::translate_paper_dir(
+                &vault,
+                &path,
+                &target,
+                &source,
+                &provider,
+                1,
+                force,
+            )
+            .await
+            {
+                Ok(outcome) => (path, outcome, None),
+                Err(err) => (path, None, Some(err.to_string())),
+            }
+        }
+    }))
+    .buffer_unordered(worker_count)
+    .collect::<Vec<_>>()
+    .await;
+
     let mut rows = Vec::new();
     let mut translated = 0usize;
     let mut failed_items = 0usize;
     let mut skipped = 0usize;
     let mut errors = Vec::new();
-    for paper in &papers {
-        if let Err(err) = layout_text::analyze_paper_dir(&vault, &paper.path, false) {
-            errors.push(json!({ "path": paper.path, "error": err.to_string() }));
-            continue;
-        }
-        match layout_translate::translate_paper_dir(
-            &vault,
-            &paper.path,
-            target,
-            source,
-            provider,
-            jobs,
-            force,
-        )
-        .await
-        {
-            Ok(Some(outcome)) => {
-                translated += outcome.translated;
-                failed_items += outcome.failed;
-                rows.push(outcome);
-            }
-            Ok(None) => skipped += 1,
-            Err(err) => errors.push(json!({ "path": paper.path, "error": err.to_string() })),
+    for (path, outcome, error) in results {
+        if let Some(error) = error {
+            errors.push(json!({ "path": path, "error": error }));
+        } else if let Some(outcome) = outcome {
+            translated += outcome.translated;
+            failed_items += outcome.failed;
+            rows.push(outcome);
+        } else {
+            skipped += 1;
         }
     }
+    rows.sort_by(|a, b| a.paper_path.cmp(&b.paper_path));
     let mut out = json!({
         "papers": rows.len(),
         "translated": translated,
