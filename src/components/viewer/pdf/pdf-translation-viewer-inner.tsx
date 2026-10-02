@@ -28,6 +28,7 @@ import type { PdfViewerInnerProps } from "@/components/viewer/pdf/types";
 import { DockviewViewport } from "@/components/viewer/pdf/viewport/dockview-viewport";
 import { PanDragHandler } from "@/components/viewer/pdf/viewport/pan-handler";
 import { WheelZoomHandler } from "@/components/viewer/pdf/viewport/wheel-zoom-handler";
+import { registerPdfTranslationControls } from "@/lib/workspace/viewer/pdf-viewer-registry";
 
 const EMPTY_PAGE_MAP = new Map();
 
@@ -89,6 +90,7 @@ const PAGE_MODE: PdfPageModeSlice = {
 
 export function PdfTranslationViewerInner({
 	docId,
+	baseDocId,
 	paperMeta = null,
 	paperAbsPath = null,
 	paperRelPath = null,
@@ -96,6 +98,7 @@ export function PdfTranslationViewerInner({
 	isActive = true,
 	onHandle,
 }: PdfViewerInnerProps) {
+	const translationControlKey = baseDocId.replace(/::translation$/, "");
 	usePdfScrollSync(docId);
 	// Interaction manager is registered; keep the capability subscribed so
 	// GlobalPointerProvider / pan-zoom gestures stay wired.
@@ -108,12 +111,17 @@ export function PdfTranslationViewerInner({
 	const { pdfTone } = usePdfPaperTone();
 	const paperKey = paperRelPath || paperAbsPath || null;
 
-	const { layoutRawRegions, rawRegionsByPage } = usePdfLayoutRegions(docId);
+	const { layoutRawRegions, rawRegionsByPage } = usePdfLayoutRegions(
+		docId,
+		baseDocId.replace(/::translation$/, ""),
+	);
 	const {
 		layoutTranslateItemsByPage,
 		layoutTranslatePageStateByPage,
 		layoutTranslateActive,
 		layoutTranslateRunning,
+		layoutTranslateWaiting,
+		layoutTranslateLabel,
 		layoutTranslateProgress,
 		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
@@ -135,6 +143,8 @@ export function PdfTranslationViewerInner({
 	layoutTranslateActiveRef.current = layoutTranslateActive;
 	const layoutTranslateRunningRef = useRef(layoutTranslateRunning);
 	layoutTranslateRunningRef.current = layoutTranslateRunning;
+	const layoutTranslateWaitingRef = useRef(layoutTranslateWaiting);
+	layoutTranslateWaitingRef.current = layoutTranslateWaiting;
 	const layoutTranslateIncomplete =
 		layoutTranslateProgress.pending +
 			layoutTranslateProgress.error +
@@ -151,11 +161,11 @@ export function PdfTranslationViewerInner({
 			translationAutoStartedRef.current = false;
 			hadLayoutRegionsRef.current = false;
 		}
-		if (!hasRegions) return;
 		if (!layoutTranslateCacheReady) return;
 		if (translationAutoStartedRef.current) return;
 		if (
 			layoutTranslateRunning ||
+			layoutTranslateWaiting ||
 			(layoutTranslateActive && !layoutTranslateIncomplete)
 		) {
 			translationAutoStartedRef.current = true;
@@ -165,6 +175,7 @@ export function PdfTranslationViewerInner({
 			if (translationAutoStartedRef.current) return;
 			if (
 				layoutTranslateRunningRef.current ||
+				layoutTranslateWaitingRef.current ||
 				(layoutTranslateActiveRef.current &&
 					!layoutTranslateIncompleteRef.current)
 			) {
@@ -179,10 +190,34 @@ export function PdfTranslationViewerInner({
 		layoutRawRegions,
 		layoutTranslateActive,
 		layoutTranslateRunning,
+		layoutTranslateWaiting,
 		layoutTranslateIncomplete,
 		layoutTranslateCacheReady,
 		toggleLayoutTranslate,
 	]);
+
+	useEffect(() => {
+		registerPdfTranslationControls(translationControlKey, {
+			running: layoutTranslateRunning,
+			waiting: layoutTranslateWaiting,
+			active: layoutTranslateActive,
+			label: layoutTranslateLabel,
+			progress: layoutTranslateProgress,
+			toggle: toggleLayoutTranslate,
+		});
+	}, [
+		translationControlKey,
+		layoutTranslateRunning,
+		layoutTranslateWaiting,
+		layoutTranslateActive,
+		layoutTranslateLabel,
+		layoutTranslateProgress,
+		toggleLayoutTranslate,
+	]);
+	useEffect(
+		() => () => registerPdfTranslationControls(translationControlKey, null),
+		[translationControlKey],
+	);
 
 	useEffect(() => {
 		onHandle?.(null);

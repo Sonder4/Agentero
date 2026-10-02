@@ -7,6 +7,7 @@
 Settings → **翻译**：
 
 - **默认服务** 下拉：内置 provider（构建里注入了 key 时）、免费 MT 与 Agent 始终可选；商用仅列出已配置者。打开下拉时对免费 MT 与已配置商用并行 probe。
+- **翻译服务与版面解析服务是两套设置**：PDF 全文翻译使用这里的 `translate.provider`；OpenAI-compatible 必须在「默认服务」选中 OpenAI 兼容，并在对应配置卡保存 key、Base URL 与 model。Settings → 布局中的 parser backend 只负责 PDF 版面分析/OCR。默认服务选为 Agent 时，翻译请求使用 Agent 配置的 agent/model，不会因为另一个设置卡配置了 OpenAI-compatible 就自动切换。
 - **内置 provider**（id `agentero`）：凭证由构建期环境变量编入 Host，卡片**没有任何凭证字段**（无 key / baseUrl / model）。可用性来自 Host 命令 `builtin_provider_status` 的 `available`，**不参与 probe**（探测它会真的发一次翻译请求）；不可用时选项禁用或隐藏，当前已选中它时仍保留在列表里。构建里没有 key 时选中它会拿到 `translate.no_builtin_key` 标记，由 `displayTranslateError`（`src/lib/translate/errors.ts`，仿 `displayAgentError`：子串匹配标记 → `i18n.t(...)`，否则原样返回）在划词翻译与全文翻译的 `notifyError` 调用点转成文案，不裸露标记串。标记能到前端是因为 `invokeTranslateText`（`src/lib/translate/api.ts`）只对**已知**翻译标记逐字抛出 `error.code`，其余情况抛 Host 的人类可读 `message`——`AppError::code()` 还会返回 `io` / `json` / `sqlite` 等通用码，按"非 `message` 即标记"判断迟早会把裸码弹给用户。注入 key 的构建里它是新装默认服务——新装没有 `settings.json`，Host `read_file` 返回 `AppSettings::default()`，所以**首次安装的默认值由 Rust `default_translate_provider()` 决定**；前端 `DEFAULT_TRANSLATE_SETTINGS` 只在浏览器 dev（不可能有 key）里生效。
 - 目标语言、划词自动翻译；开启后，PDF 选区文本提取完成即自动启动翻译并打开结果卡，关闭时仍可从选区菜单手动翻译。
 - **商用 API** 卡片仅填写 key / endpoint / region / model；点「确定」后：
@@ -37,9 +38,15 @@ Settings → **翻译**：
   - 译文按论文写入 `{paper}/.src/layout-translate.json`。缓存命中需匹配 provider / 源语言 / 目标语言 / 非密钥服务配置，并逐块校验 region id + 原文（存的是归一化后的原文，归一化规则变化时旧缓存会 miss 一次并重译）；版面或目标语言变化时只复用仍匹配的块。自定义翻译提示词非空时,service key 追加其 FNV-1a 指纹——改提示词即重译；空提示词的 key 与旧版字节一致,存量缓存升级后仍命中。
   - 单页翻译写缓存时按同一 cache key 增量合并，避免只翻译一页时覆盖其它页已经落盘的译文。
   - 运行中再点=停止；有译文再点=清除。实现：`layout-translate.ts` + `layout-translate-source.ts` + `layout-translate-overlay.tsx`。
+  - 工具栏状态显示已完成块数 / 总块数，失败时附带失败块数；该进度按可翻译的布局区域统计，不是模型 token 或网络传输进度。失败区域保留错误状态，便于判断部分成功。
+  - 文件路径约定：工作区 tab 可以是 PDF 文件路径，但布局分析和 sidecar 操作接收论文目录。PDF tab 会先解析所属论文目录，再由 Host 在论文目录中定位 PDF。论文 metadata 移入 `.src/metadata.json` 不会改变 PDF 本体路径；若再次出现 `paper folder not found` 或 `No local PDF for layout analysis`，优先检查调用参数是否误传 PDF 文件路径而不是论文目录。
   - 覆盖层按当前 PDF 页面背景 tone 绘制纸面底色（深字）；暗色下套用与页面栅格相同的 invert filter（`PDF_PAGE_RASTER_DARK_CLASS`），使盖住原文的底色与反转后的纸面一致。排版先以原文尺度估算、再用真实浏览器度量校验：译文膨胀时依次收紧行距（1.25 → 1.10）、缩小字号；遵循严格 CJK 断行，只有不可断的 URL/标识符仍溢出时才允许词内断行。因此普通段落不会过早缩成极小字，并尽量避免裁掉译文。
   - **双栏翻译**（Settings → 翻译 →「在侧窗中打开渲染好的翻译」）：全文翻译按钮在原文右侧打开只读译文 PDF 面板（同页栈 + 译文覆盖层，隐藏工具栏/选区菜单）。左右各是独立 EmbedPDF 实例，通过模块级 peer 注册表（`src/lib/pdf/scroll-sync.ts` + `usePdfScrollSync`）双向同步**滚动比例**与**缩放**（scroll 事件按动画帧合并）；任一侧滚轮滚动或 Ctrl/Cmd+滚轮缩放，另一侧跟到同一相对位置。译文面板走精简 `PdfTranslationViewerInner`：只挂 raster/tiling/zoom 等核心插件（不挂 ONNX 版面分析、批注、搜索、选区，也不调用对应 capability hooks），页面层只渲染纸面 + 译文覆盖；打开时优先读 `layout-translate.json` 缓存，避免与源面板抢跑第二套翻译/版面任务。
-- API：`runTranslate(task)`（`src/lib/translate/`）。
+- **Agent 重试日志防污染（2026-10-01）**：Agent/ACP 的 `Retrying (attempt ...)...` 与 `Retry finished, resuming.` 只能作为运行状态，不能成为译文。`sanitizeAgentTranslationText` 会清理这类输出；`applyChain` 清理后为空时将 region 标记为 error，不绘制覆盖层；`writeLayoutTranslateSidecar` 写盘前再次清理并丢弃空结果，防止污染进入缓存。旧污染 sidecar 不会被接受，需重新翻译或用已验证缓存恢复。回归测试：`test/pdf-layout-translate.test.ts`、`test/pdf-layout-translate-agent-lifecycle.test.ts`。
+
+Agent 请求被后台接收不等于翻译完成。诊断日志需区分 Agent/ACP 上游错误（provider/model、HTTP 状态或错误码、stop reason）与应用层空输出、超时、取消，并用 session id 关联；不得写入密钥或整篇论文正文。网页 AI Gemini / ChatGPT provider 切换属于原生 WebView 生命周期，不受翻译服务选择影响；切换 provider 时会隐藏先前 WebView，再打开新 provider，收起面板仅隐藏视图以便保留登录态。
+
+双栏 PDF 译文面板在缓存读取后立即进入翻译或等待解析，并持续订阅原文面板的版面结果。原文工具栏通过 viewer 注册表显示译文任务的等待、运行和块数进度；再次点击操作同一个任务（取消等待、停止、重试或隐藏），复用现有译文标签。解析失败（包括源面板或 headless 的 MinerU 超时）及入队失败使用错误 Toast 结束等待，不把右侧原文页面当成翻译完成。解析服务失败仍需修复服务配置或更换可用解析 provider 后重试。
 
 ## Prompt
 

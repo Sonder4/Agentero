@@ -31,11 +31,15 @@ export type PdfLayoutRegions = {
 	rawRegionsByPage: ReadonlyMap<number, PdfLayoutRegion[]>;
 };
 
-export function usePdfLayoutRegions(docId: string): PdfLayoutRegions {
+export function usePdfLayoutRegions(
+	docId: string,
+	sourceDocId?: string,
+): PdfLayoutRegions {
 	// `byDocument` is keyed by the revision-stripped base id (the translation
 	// pane seeds it from the source pane while each viewer mounts its own
 	// `tab::r<n>`); `overlayVisible` stays raw — same-viewer writers only.
 	const documentKey = layoutDocumentKey(docId);
+	const sourceKey = sourceDocId ? layoutDocumentKey(sourceDocId) : documentKey;
 	/** Figures rail header toggles this; mirror into EmbedPDF plugin. */
 	const layoutOverlayVisible = useStore(
 		layoutAnalysisStore,
@@ -44,16 +48,14 @@ export function usePdfLayoutRegions(docId: string): PdfLayoutRegions {
 	/** Post-merge layout regions for hover hit targets (figures rail source). */
 	const layoutDocRegions = useStore(
 		layoutAnalysisStore,
-		(s) => s.byDocument[documentKey]?.regions ?? null,
+		(s) =>
+			(s.byDocument[sourceKey] ?? s.byDocument[documentKey])?.regions ?? null,
 	);
 	/** Pre-merge detections for the debug Eye overlay (all model boxes). */
-	const layoutRawRegions = useStore(
-		layoutAnalysisStore,
-		(s) =>
-			s.byDocument[documentKey]?.rawRegions ??
-			s.byDocument[documentKey]?.regions ??
-			null,
-	);
+	const layoutRawRegions = useStore(layoutAnalysisStore, (s) => {
+		const result = s.byDocument[sourceKey] ?? s.byDocument[documentKey];
+		return result?.rawRegions ?? result?.regions ?? null;
+	});
 	/**
 	 * Hover hit targets and debug boxes, bucketed by page. Both passes are
 	 * whole-document (NMS / spurious-detection suppression), so they must not run

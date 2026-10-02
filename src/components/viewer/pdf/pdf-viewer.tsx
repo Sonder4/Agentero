@@ -46,7 +46,15 @@ import {
 	ZoomMode,
 	ZoomPluginPackage,
 } from "@embedpdf/plugin-zoom/react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { PdfBottomBar } from "@/components/viewer/pdf/chrome/pdf-bottom-bar";
@@ -58,7 +66,6 @@ import { PdfLeftToolbar } from "@/components/viewer/pdf/chrome/pdf-left-toolbar"
 import { PdfOutlinePanel } from "@/components/viewer/pdf/chrome/pdf-outline-panel";
 import { PdfReferencesPanel } from "@/components/viewer/pdf/chrome/pdf-references-panel";
 import { PdfToolbar } from "@/components/viewer/pdf/chrome/pdf-toolbar";
-
 import { usePdfEngineContext } from "@/components/viewer/pdf/engine-provider";
 import { usePdfActiveAnchors } from "@/components/viewer/pdf/hooks/use-pdf-active-anchors";
 import { usePdfAskThreads } from "@/components/viewer/pdf/hooks/use-pdf-ask-threads";
@@ -144,6 +151,10 @@ import {
 	selectionAnchorKey,
 } from "@/lib/pdf/selection";
 import { PDF_ZOOM_MAX, PDF_ZOOM_MIN } from "@/lib/pdf/zoom";
+import {
+	pdfTranslationControlsFor,
+	subscribePdfHandles,
+} from "@/lib/workspace/viewer/pdf-viewer-registry";
 
 export type {
 	PdfViewerHandle,
@@ -378,6 +389,9 @@ function PdfViewerInner({
 }: PdfViewerInnerProps) {
 	const { t } = useTranslation("viewer");
 	const [importBusy, setImportBusy] = useState(false);
+	const companionControls = useSyncExternalStore(subscribePdfHandles, () =>
+		pdfTranslationControlsFor(`${baseDocId}::translation`),
+	);
 	// Parent often passes inline lambdas; keep latest in refs so data effects
 	// do not re-fire every parent render (was Maximum update depth exceeded).
 	const onAsksChangeRef = useRef(onAsksChange);
@@ -458,6 +472,8 @@ function PdfViewerInner({
 		(s) => s.translate.autoTranslateSelection,
 	);
 	const displayMode = useSettings((s) => s.translate.displayMode);
+	const dualPaneControls =
+		displayMode === "dualPane" ? companionControls : null;
 	const dualPaneTranslate = displayMode === "dualPane";
 	const paperMeta = useMemo(() => {
 		if (paperMetaProp) return paperMetaProp;
@@ -947,6 +963,11 @@ function PdfViewerInner({
 		if (latexTranslateRunning) return;
 		if (displayMode !== "dualPane") {
 			toggleLayoutTranslate();
+			return;
+		}
+		const controls = pdfTranslationControlsFor(`${baseDocId}::translation`);
+		if (controls) {
+			controls.toggle();
 			return;
 		}
 		// In dual-pane mode the source pane only opens the right-hand
@@ -1765,11 +1786,19 @@ function PdfViewerInner({
 					visualCropPending={visualCropPending}
 					engine={engine}
 					onToggleRegionSelect={toggleRegionSelect}
-					layoutTranslateRunning={layoutTranslateRunning}
-					layoutTranslateWaiting={layoutTranslateWaiting}
-					layoutTranslateActive={layoutTranslateActive}
-					layoutTranslateLabel={layoutTranslateLabel}
-					layoutTranslateProgress={layoutTranslateProgress}
+					layoutTranslateRunning={
+						dualPaneControls?.running ?? layoutTranslateRunning
+					}
+					layoutTranslateWaiting={
+						dualPaneControls?.waiting ?? layoutTranslateWaiting
+					}
+					layoutTranslateActive={
+						dualPaneControls?.active ?? layoutTranslateActive
+					}
+					layoutTranslateLabel={dualPaneControls?.label ?? layoutTranslateLabel}
+					layoutTranslateProgress={
+						dualPaneControls?.progress ?? layoutTranslateProgress
+					}
 					onToggleLayoutTranslate={handleToggleLayoutTranslateWithDualPane}
 					latexTranslateRunning={latexTranslateRunning}
 					isRemotePaper={isRemotePaper}

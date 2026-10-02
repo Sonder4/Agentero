@@ -57,6 +57,16 @@ export type PdfViewerHandle = {
 };
 
 const handles = new Map<string, PdfViewerHandle>();
+/** The slim companion exposes its translation controls without reader handles. */
+export type PdfTranslationControls = {
+	running: boolean;
+	waiting: boolean;
+	active: boolean;
+	label: string;
+	progress: { total: number; done: number; error: number };
+	toggle: () => void;
+};
+const translationControls = new Map<string, PdfTranslationControls>();
 const listeners = new Set<() => void>();
 
 function emitPdfHandleChange(): void {
@@ -68,6 +78,21 @@ export function subscribePdfHandles(listener: () => void): () => void {
 	return () => {
 		listeners.delete(listener);
 	};
+}
+
+export function registerPdfTranslationControls(
+	tabId: string,
+	controls: PdfTranslationControls | null,
+): void {
+	if (controls) translationControls.set(tabId, controls);
+	else translationControls.delete(tabId);
+	emitPdfHandleChange();
+}
+
+export function pdfTranslationControlsFor(
+	tabId: string,
+): PdfTranslationControls | null {
+	return translationControls.get(tabId) ?? null;
 }
 
 export function registerPdfHandle(

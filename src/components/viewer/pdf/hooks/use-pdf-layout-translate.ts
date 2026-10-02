@@ -14,12 +14,7 @@ import { toast } from "sonner";
 import { useStore } from "zustand";
 import { backgroundTasksStore } from "@/lib/core/background-tasks";
 import { errorText } from "@/lib/core/error";
-import {
-	notifyAction,
-	notifyError,
-	notifySuccess,
-	notifyWarning,
-} from "@/lib/core/notify";
+import { notifyAction, notifyError, notifySuccess } from "@/lib/core/notify";
 import { sameRelPaperPath } from "@/lib/core/path";
 import {
 	applyLayoutTranslateSidecar,
@@ -34,6 +29,7 @@ import {
 	type LayoutTranslateJobStatus,
 	type LayoutTranslateState,
 	layoutAnalysisStore,
+	layoutDocumentKey,
 	listTranslatableLayoutRegions,
 	normalizeLayoutPaperKey,
 	type PdfLayoutRegion,
@@ -409,7 +405,16 @@ export function usePdfLayoutTranslate({
 					notifyError(t("pdf.layoutTranslate.needLayout"));
 					return;
 				}
-				enqueuePaperLayoutAnalysis({ paperAbsPath });
+				enqueuePaperLayoutAnalysis({
+					paperAbsPath,
+					onError: (e) => {
+						if (layoutTranslateWaitTargetRef.current !== target) return;
+						notifyError(t("pdf.layoutTranslate.parseFailedWhileWaiting"), {
+							description: errorText(e),
+						});
+						cancelWaitingLayout();
+					},
+				});
 			}
 			layoutTranslateWaitTargetRef.current = target;
 			waitingAutoStartedRef.current = false;
@@ -786,11 +791,14 @@ export function usePdfLayoutTranslate({
 	// panel store, so a level check would trip on a stale earlier failure.
 	useEffect(() => {
 		if (layoutTranslateJob.status !== "waitingLayout") return;
-		const fail = () => {
-			notifyWarning(t("pdf.layoutTranslate.parseFailedWhileWaiting"), {
-				id: layoutTranslateWaitToastIdRef.current,
-			});
+		let failed = false;
+		const fail = (message?: string) => {
+			if (failed) return;
+			failed = true;
 			cancelWaitingLayout();
+			notifyError(t("pdf.layoutTranslate.parseFailedWhileWaiting"), {
+				description: message,
+			});
 		};
 		const tracked = new Set<string>();
 		const scanTasks = () => {
@@ -812,16 +820,43 @@ export function usePdfLayoutTranslate({
 			}
 		};
 		const unsubTasks = backgroundTasksStore.subscribe(scanTasks);
-		const unsubUi = layoutAnalysisStore.subscribe((s) => {
-			if (s.activeDocumentId !== docId) return;
-			if (s.ui.stage === "error" || s.ui.stage === "cancelled") fail();
+		const sourceKey = layoutDocumentKey(docId).replace(/::translation$/, "");
+		const uiMatches = (s: ReturnType<typeof layoutAnalysisStore.getState>) =>
+			(s.activeDocumentId != null &&
+				(layoutDocumentKey(s.activeDocumentId) === layoutDocumentKey(docId) ||
+					layoutDocumentKey(s.activeDocumentId) === sourceKey)) ||
+			(s.activePaperAbsPath != null &&
+				paperAbsPath != null &&
+				normalizeLayoutPaperKey(s.activePaperAbsPath) ===
+					normalizeLayoutPaperKey(paperAbsPath));
+		const unsubUi = layoutAnalysisStore.subscribe((s, prev) => {
+			// Headless completion clears activePaperAbsPath; use its last running
+			// snapshot to attribute the failure, including a source pane's run.
+			if (
+				!uiMatches(s) &&
+				!(
+					prev.ui.stage === "running" &&
+					uiMatches(prev) &&
+					prev.activeDocumentId === s.activeDocumentId
+				)
+			)
+				return;
+			if (s.ui.stage === "error") fail(s.ui.message);
+			else if (s.ui.stage === "cancelled") fail();
 		});
 		scanTasks();
 		return () => {
 			unsubTasks();
 			unsubUi();
 		};
-	}, [layoutTranslateJob.status, docId, paperRelPath, cancelWaitingLayout, t]);
+	}, [
+		layoutTranslateJob.status,
+		docId,
+		paperAbsPath,
+		paperRelPath,
+		cancelWaitingLayout,
+		t,
+	]);
 
 	// A translation pane must show the source pane's completed cache immediately;
 	// it should not depend on starting a second translation job or on the source

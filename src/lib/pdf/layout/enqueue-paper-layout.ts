@@ -9,6 +9,7 @@ import { commands } from "@/lib/core/bindings";
 import { errorText } from "@/lib/core/error";
 import { callApiResult } from "@/lib/core/ipc";
 import { logger } from "@/lib/core/logger";
+import { toVaultRelative } from "@/lib/core/path";
 import {
 	registerTaskExecutor,
 	type TaskExecutorContext,
@@ -17,9 +18,10 @@ import {
 import { analyzePaperLayoutHeadless } from "@/lib/pdf/layout/headless-analyze";
 import { readLayoutSidecar } from "@/lib/pdf/layout/io";
 import { layoutAnalysisStore } from "@/lib/pdf/layout/store";
+import { joinVaultPath } from "@/lib/vault/path";
 import { getVaultPath } from "@/lib/vault/store";
 
-const queuedPapers = new Set<string>();
+const queuedPapers = new Map<string, Array<(error: unknown) => void>>();
 
 function normalizePaperKey(paperAbsPath: string): string {
 	return paperAbsPath.replace(/[/\\]+$/, "").replace(/\\/g, "/");
@@ -38,7 +40,7 @@ async function runLayoutAnalyzeExecutor(
 ): Promise<void> {
 	const { jobId, vaultPath, paperPath, signal } = ctx;
 	const paperAbsPath = paperPath
-		? `${vaultPath}/${paperPath}`.replace(/\\/g, "/")
+		? joinVaultPath(vaultPath, paperPath)
 		: vaultPath;
 	const paperLabel =
 		paperPath?.split("/").filter(Boolean).pop() || paperAbsPath;
@@ -91,18 +93,24 @@ async function runLayoutAnalyzeExecutor(
 export function enqueuePaperLayoutAnalysis(opts: {
 	paperAbsPath: string;
 	paperLabel?: string;
+	onError?: (error: unknown) => void;
 }): void {
-	const paperAbsPath = normalizePaperKey(opts.paperAbsPath);
-	if (!paperAbsPath || queuedPapers.has(paperAbsPath)) return;
+	const paperAbsPath = opts.paperAbsPath;
+	const paperKey = normalizePaperKey(paperAbsPath);
+	if (!paperKey) return;
+	const queuedErrors = queuedPapers.get(paperKey);
+	if (queuedErrors) {
+		if (opts.onError) queuedErrors.push(opts.onError);
+		return;
+	}
 
 	const vaultPath = getVaultPath();
 	if (!vaultPath) return;
-	const paperRelPath = paperAbsPath
-		.slice(vaultPath.length)
-		.replace(/^[/\\]+/, "");
+	const paperRelPath = toVaultRelative(vaultPath, paperAbsPath);
 	if (!paperRelPath) return;
 
-	queuedPapers.add(paperAbsPath);
+	const onErrors = opts.onError ? [opts.onError] : [];
+	queuedPapers.set(paperKey, onErrors);
 
 	void (async () => {
 		try {
@@ -123,8 +131,9 @@ export function enqueuePaperLayoutAnalysis(opts: {
 				paperAbsPath,
 				error: errorText(e),
 			});
+			for (const onError of onErrors) onError(e);
 		} finally {
-			queuedPapers.delete(paperAbsPath);
+			queuedPapers.delete(paperKey);
 		}
 	})();
 }

@@ -866,9 +866,9 @@ export async function openTranslationTab(
 		}
 	}
 
-	const existing = tabs.find(
-		(t) => t.id === `${tabIdForPath(paperAbsPath)}::translation`,
-	);
+	const translationPane = createTranslationSplitPane(paperTab);
+	if (!translationPane) return;
+	const existing = tabs.find((t) => t.id === translationPane.id);
 	if (existing) {
 		// Restored/reused translation tabs do not pass through the creation path;
 		// re-bind the two PDF documents every time the source opens translation.
@@ -877,8 +877,6 @@ export async function openTranslationTab(
 		return;
 	}
 
-	const translationPane = createTranslationSplitPane(paperTab);
-	if (!translationPane) return;
 	registerScrollSyncPair(paperTabId, translationPane.id);
 	// Re-use the source pane's in-memory layout result so the translation pane
 	// does not have to re-read the sidecar or re-run layout analysis.

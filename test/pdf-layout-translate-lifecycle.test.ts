@@ -126,7 +126,7 @@ function createHarness() {
 		tasks: [],
 	});
 	const layoutUi = createFakeStore<{
-		ui: { stage: string };
+		ui: { stage: string; message?: string };
 		activeDocumentId: string | null;
 		activePaperAbsPath: string | null;
 	}>({
@@ -226,6 +226,7 @@ function createHarness() {
 		},
 		normalizeLayoutPaperKey: (path: string) =>
 			path.replace(/[/\\]+$/, "").replace(/\\/g, "/"),
+		layoutDocumentKey: (id: string) => id.replace(/::r\d+$/, ""),
 		enqueuePaperLayoutAnalysis: (...args: unknown[]) => enqueues.push(args),
 		layoutAnalysisStore: layoutUi,
 		runLayoutRegionTranslate(runOptions: RunOptions) {
@@ -564,11 +565,8 @@ it("cancels the queued wait when the tracked parse job fails", async () => {
 	});
 	h.render();
 	assert.equal(h.view.layoutTranslateWaiting, false);
-	assert.equal(h.warnings.length, 1);
-	assert.equal(
-		h.warnings[0]?.[0],
-		"pdf.layoutTranslate.parseFailedWhileWaiting",
-	);
+	assert.equal(h.errors.length, 1);
+	assert.equal(h.errors[0]?.[0], "pdf.layoutTranslate.parseFailedWhileWaiting");
 	h.render({ layoutRawRegions: [region(0)] });
 	await h.flush();
 	assert.equal(h.runs.length, 0);
@@ -592,6 +590,71 @@ it("enqueues layout analysis when nothing is pending and ignores stale failures"
 	assert.equal(h.view.layoutTranslateWaiting, true); // stale failure ignored
 	assert.equal(h.enqueues.length, 1); // nothing pending → parse enqueued
 	assert.equal(h.actions.length, 1);
+});
+
+it("reports a source viewer failure to the waiting translation companion", () => {
+	const h = createHarness();
+	h.analysis.setState({
+		ui: { stage: "running" },
+		activeDocumentId: "paper-a::r3",
+		activePaperAbsPath: "/vault/papers/a",
+	});
+	h.render({ docId: "paper-a::translation::r4", layoutRawRegions: [] });
+	h.view.toggleLayoutTranslate();
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, true);
+	assert.equal(h.enqueues.length, 0);
+	h.analysis.setState({
+		ui: { stage: "error", message: "MinerU task timed out" },
+		activePaperAbsPath: null,
+	});
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, false);
+	assert.equal(h.errors.length, 1);
+	assert.equal(h.errors[0][0], "pdf.layoutTranslate.parseFailedWhileWaiting");
+	assert.equal(
+		(h.errors[0][1] as { description: string }).description,
+		"MinerU task timed out",
+	);
+});
+
+it("attributes headless parse failure by its last running paper path", () => {
+	const h = createHarness();
+	h.analysis.setState({
+		ui: { stage: "running" },
+		activeDocumentId: "headless-layout-job-1",
+		activePaperAbsPath: "/vault/papers/a",
+	});
+	h.render({ docId: "paper-a::translation::r4", layoutRawRegions: [] });
+	h.view.toggleLayoutTranslate();
+	h.render();
+	h.analysis.setState({
+		ui: { stage: "error", message: "Remote parser unavailable" },
+		activePaperAbsPath: null,
+	});
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, false);
+	assert.equal(h.errors.length, 1);
+});
+
+it("releases the wait when enqueue fails and allows retry", () => {
+	const h = createHarness();
+	h.render({ layoutRawRegions: [] });
+	h.view.toggleLayoutTranslate();
+	h.render();
+	const options = h.enqueues[0][0] as { onError: (error: unknown) => void };
+	options.onError(new Error("paper folder not found"));
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, false);
+	assert.equal(h.errors.length, 1);
+	h.view.toggleLayoutTranslate();
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, true);
+	assert.equal(h.enqueues.length, 2);
+	options.onError(new Error("Late enqueue failure"));
+	h.render();
+	assert.equal(h.view.layoutTranslateWaiting, true);
+	assert.equal(h.errors.length, 1);
 });
 
 it("keeps the legacy hint for a loose PDF with nothing to enqueue", () => {
