@@ -23,6 +23,8 @@ PDFium engine 由窗口共享。默认优先 **worker 引擎**（PDFium WASM 跑
 
 ## 阅读能力
 
+批注栏的 viewport gutter 只增加左右 padding，上下仍使用 EmbedPDF 的 viewport gap。原文与只读译文面板顶部保持相同页间距，避免把半个批注栏宽度误加到第一页上方；PDF 文件自身的纸内页边距仍由原文件决定。
+
 | 能力 | 说明 |
 |---|---|
 | 缩放 | 底部栏滑动条调节 50%–300%（旁显示当前百分比；静止为灰色，hover / 聚焦 / 拖动时为 brand 主题色）；另支持 ⌘滚轮、触控板捏合；真实 scale 重渲染。默认仍以适应宽度打开。⌘滚轮 / 触控板捏合在手势期间**只做 CSS transform 预览**（缩放 ZoomGestureWrapper 那层 div，`transform-origin: 0 0`）；窄页面维持阅读器的自动居中，页面开始横向溢出后在约 30% 阅读区宽度内平滑过渡至以手势点为锚。松手或滚轮静默 150ms 后**只提交一次真实 zoom**（`requestZoom(目标, 指针位置)`，`clampZoomPreviewScale` 把它夹在 50%–300%）；提交会等待虚拟 scroller 发布目标页的新尺寸，在同一绘制帧用手势所在 PDF 点校正 scroll 后再撤掉 transform，避免预览与真实居中布局交接时的横向跳变。一次提交是必须的，不是优化：每次真实 zoom 都会重排 scroller 并在下一帧投递一个视口 scroll 请求，逐帧提交会不断覆盖自己的锚点、最终把视口推向文档开头；而按 10%–20% 固定档位跳格又让慢速捏合看起来毫无响应。wheel 监听不常驻 non-passive（`bindZoomGesture`）：普通滚动手势期间切成 passive，滚轮静默后再换回 non-passive，保证捏合缩放仍可 `preventDefault`，同时普通滚动不被主线程阻塞。WebKit（Safari / macOS WKWebView）的触控板捏合不以 ctrl+wheel 送达，而是 `gesturestart/change/end`，`bindZoomGesture` 用同一组 start/change/end 回调上报相对手势起点的 magnification 并 `preventDefault` 抑制平台放大，`gestureend` 丢失时由 1.2s 看门狗兜底提交 |
