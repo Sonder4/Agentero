@@ -16,6 +16,10 @@ Agentero 是一个基于 Tauri 2 + React 19 的本地优先科研工作台。Vau
 - 如果修改了 Template 下的 Skill 和 AGENTS.md ，需要对应更新版本号。
 - 修改后需同步更新相关文档，并检查 Roadmap 和 Todo。
 - 修改完成后，把当次相关的改动按照 commit 部分的要求提交。
+- 每次完成代码修改后，必须根据本次修改内容补充工作记录（写明原因、改动、验证结果和已知限制），完成对应的 Conventional Commit，并完成项目应用编译；桌面应用修改还必须安装本次构建产物，核对安装注册版本、运行 exe 版本和启动日志后才能结束任务。
+- 全文翻译修改必须同时检查 Agent/ACP 事件结果、chain 分段状态和 sidecar 写入边界；运行状态文本（如 `Retrying...` / `Retry finished, resuming.`）不得进入译文或 PDF 覆盖层。
+- 论文翻译相关改动至少运行 `pnpm typecheck` 与 `pnpm vitest run test/pdf-layout-translate.test.ts test/pdf-layout-translate-agent-lifecycle.test.ts`；桌面发布前还要运行 `pnpm build`，并在安装后的应用日志中核对启动与翻译状态。
+- `pnpm tauri build` 若因配置 updater 公钥但缺少 `TAURI_SIGNING_PRIVATE_KEY` 返回失败，需区分签名产物失败与 MSI/NSIS 生成结果；必须检查 `target/release/bundle/{msi,nsis}`、安装注册版本、运行 exe 版本和启动日志后再下结论。
 
 ## Windows 注意事项
 
