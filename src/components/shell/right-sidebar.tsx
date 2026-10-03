@@ -121,9 +121,18 @@ export function RightSidebar() {
 						</Suspense>
 					</div>
 				)}
-			{!agentInWindow && rightSidebarOpen && rightSidebarTab === "web-ai" && (
-				<div className="min-h-0 flex-1">
-					<WebAiPanel />
+			{!agentInWindow && (
+				<div
+					className={cn(
+						"min-h-0 flex-1",
+						(!rightSidebarOpen || rightSidebarTab !== "web-ai") && "hidden",
+					)}
+				>
+					{/* Keep the native provider WebView alive while the rail is
+					    collapsed or switched to Agent; only its visibility changes. */}
+					<WebAiPanel
+						visible={rightSidebarOpen && rightSidebarTab === "web-ai"}
+					/>
 				</div>
 			)}
 		</div>

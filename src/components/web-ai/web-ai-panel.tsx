@@ -10,7 +10,7 @@ import { notifyError } from "@/lib/core/notify";
 import { isMobileApp, isTauri } from "@/lib/core/tauri";
 import { cn } from "@/lib/core/utils";
 
-export function WebAiPanel() {
+export function WebAiPanel({ visible = true }: { visible?: boolean }) {
 	const { t } = useTranslation("app");
 	const mobileOnly = isMobileApp();
 	const hostRef = useRef<HTMLDivElement>(null);
@@ -19,6 +19,7 @@ export function WebAiPanel() {
 	const [status, setStatus] = useState<WebAiStatus | null>(null);
 	const [text, setText] = useState("");
 	const [error, setError] = useState<string | null>(null);
+	const visibilityGenerationRef = useRef(0);
 
 	const refresh = useCallback(async () => {
 		if (!isTauri() || mobileOnly) return;
@@ -45,6 +46,7 @@ export function WebAiPanel() {
 		// during cleanup can hide a newly opened WebView after a provider switch
 		// or a panel refresh.
 		const currentProviderId = providerId;
+		const generation = ++visibilityGenerationRef.current;
 		if (!isTauri() || mobileOnly || !hostRef.current) return;
 		const host = hostRef.current;
 		let frame = 0;
@@ -52,35 +54,49 @@ export function WebAiPanel() {
 			frame = 0;
 			const rect = host.getBoundingClientRect();
 			const scale = window.devicePixelRatio || 1;
-			void callApiResult(() =>
-				commands.webAiSetBounds({
-					providerId: currentProviderId,
-					bounds: {
-						x: rect.left,
-						y: rect.top,
-						width: rect.width,
-						height: rect.height,
-						scaleFactor: scale,
-					},
-				}),
-			).catch(() => undefined);
+			if (visible) {
+				void callApiResult(() =>
+					commands.webAiSetBounds({
+						providerId: currentProviderId,
+						bounds: {
+							x: rect.left,
+							y: rect.top,
+							width: rect.width,
+							height: rect.height,
+							scaleFactor: scale,
+						},
+					}),
+				).catch(() => undefined);
+			}
 		};
 		const observer = new ResizeObserver(() => {
 			if (!frame) frame = requestAnimationFrame(publish);
 		});
 		observer.observe(host);
 		publish();
+		void callApiResult(() =>
+			commands.webAiView({
+				providerId: currentProviderId,
+				visible,
+			}),
+		).catch(() => undefined);
 		return () => {
 			observer.disconnect();
 			if (frame) cancelAnimationFrame(frame);
-			void callApiResult(() =>
-				commands.webAiView({
-					providerId: currentProviderId,
-					visible: false,
-				}),
-			).catch(() => undefined);
+			// Provider changes run cleanup before the next effect. Delay the hide
+			// until the next task and ignore it when a newer effect already owns the
+			// provider; otherwise an old cleanup can hide the newly selected view.
+			window.setTimeout(() => {
+				if (visibilityGenerationRef.current !== generation) return;
+				void callApiResult(() =>
+					commands.webAiView({
+						providerId: currentProviderId,
+						visible: false,
+					}),
+				).catch(() => undefined);
+			}, 0);
 		};
-	}, [mobileOnly, providerId]);
+	}, [mobileOnly, providerId, visible]);
 
 	const boundsForHost = () => {
 		const host = hostRef.current;
@@ -95,22 +111,45 @@ export function WebAiPanel() {
 		};
 	};
 
-	const open = async () => {
+	const openProvider = async (nextProviderId: string) => {
 		setError(null);
 		try {
 			const next = await callApiResult(() =>
-				commands.webAiOpen({ providerId, bounds: boundsForHost() }),
+				commands.webAiOpen({
+					providerId: nextProviderId,
+					bounds: boundsForHost(),
+				}),
 			);
 			// A panel unmount can leave an in-flight cleanup hide request for
 			// this same provider. Re-assert visibility after open so reopening
 			// the panel cannot leave a successfully created WebView hidden.
 			await callApiResult(() =>
-				commands.webAiView({ providerId, visible: true }),
+				commands.webAiView({ providerId: nextProviderId, visible: true }),
 			);
 			setStatus(next);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		}
+	};
+
+	const open = async () => openProvider(providerId);
+
+	const switchProvider = async (nextProviderId: string) => {
+		const previousProviderId = providerId;
+		if (previousProviderId === nextProviderId) return;
+		// The effect cleanup is intentionally generation-guarded, so explicitly
+		// hide the old native view before selecting another provider. Otherwise a
+		// still-open ChatGPT view can remain above the newly selected Gemini view.
+		if (isTauri() && !mobileOnly) {
+			await callApiResult(() =>
+				commands.webAiView({
+					providerId: previousProviderId,
+					visible: false,
+				}),
+			).catch(() => undefined);
+		}
+		setProviderId(nextProviderId);
+		if (visible) await openProvider(nextProviderId);
 	};
 
 	const prepareText = async () => {
@@ -150,7 +189,7 @@ export function WebAiPanel() {
 				<select
 					className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs"
 					value={providerId}
-					onChange={(event) => setProviderId(event.target.value)}
+					onChange={(event) => void switchProvider(event.target.value)}
 					aria-label={t("webAi.provider")}
 				>
 					{providers.map((provider) => (

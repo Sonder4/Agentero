@@ -52,7 +52,11 @@ const PROVIDERS: &[ProviderDefinition] = &[
         name: "Gemini",
         home_url: "https://gemini.google.com/app",
         origins: &["gemini.google.com"],
-        auth_origins: &["accounts.google.com", "accounts.youtube.com"],
+        auth_origins: &[
+            "accounts.google.com",
+            "accounts.google.de",
+            "accounts.youtube.com",
+        ],
         conversation_marker: "/app/",
         composer_selectors: &[
             "rich-textarea [contenteditable='true']",
@@ -351,6 +355,10 @@ mod tests {
         assert!(is_provider_navigation_url(
             "gemini",
             "https://accounts.google.com/v3/signin"
+        ));
+        assert!(is_provider_navigation_url(
+            "gemini",
+            "https://accounts.google.de/accounts/SetSID"
         ));
         assert!(is_provider_navigation_url(
             "deepseek",
