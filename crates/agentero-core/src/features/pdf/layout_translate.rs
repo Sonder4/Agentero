@@ -45,6 +45,8 @@ pub struct LayoutTranslateOutcome {
     pub error: Option<String>,
 }
 
+// Keep the existing CLI call boundary explicit (paper, language, service and workers).
+#[allow(clippy::too_many_arguments)]
 pub async fn translate_paper_dir(
     vault: &Path,
     paper_rel: &str,
@@ -576,7 +578,7 @@ Rules:\n\
 - Do not add, drop, summarize or explain anything. Output only the translation.\n"
     );
     if batch.len() == 1 {
-        prompt.push_str("\n");
+        prompt.push('\n');
         prompt.push_str(&batch[0].source);
         return prompt;
     }

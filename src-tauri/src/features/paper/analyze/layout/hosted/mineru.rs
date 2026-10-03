@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 const MINERU_BASE_URL: &str = "https://mineru.net";
 const MINERU_POLL_INTERVAL: Duration = Duration::from_secs(3);
 const MINERU_JOB_DEADLINE: Duration = Duration::from_secs(600);
+const MINERU_STALL_DEADLINE: Duration = Duration::from_secs(180);
 const MINERU_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// Document language sent when the user has not picked one. `ch` is also
 /// MinerU's own default and covers Chinese (Simplified / Traditional) plus
@@ -607,6 +608,8 @@ pub(crate) async fn run_mineru_extract(
     // 2) Poll until done (deadline guards a stuck task).
     let poll_url = format!("{base}/api/v4/extract-results/batch/{batch_id}");
     let started = Instant::now();
+    let mut last_progress = started;
+    let mut last_state = None;
     let zip_url = loop {
         if cancel() {
             return Err(AppError::message(CANCELLED_MESSAGE));
@@ -614,9 +617,15 @@ pub(crate) async fn run_mineru_extract(
         if started.elapsed() > MINERU_JOB_DEADLINE {
             return Err(AppError::message("MinerU task timed out"));
         }
+        if last_progress.elapsed() > MINERU_STALL_DEADLINE {
+            return Err(AppError::message("MinerU task made no progress for 180 seconds; retry or select another layout provider"));
+        }
         tokio::time::sleep(MINERU_POLL_INTERVAL).await;
         let poll = client
             .get(&poll_url)
+            .timeout(
+                Duration::from_secs(30).min(MINERU_JOB_DEADLINE.saturating_sub(started.elapsed())),
+            )
             .header("Authorization", &auth)
             .send()
             .await
@@ -658,6 +667,11 @@ pub(crate) async fn run_mineru_extract(
         let total = extract_progress
             .and_then(|p| p.get("total_pages"))
             .and_then(Value::as_u64);
+        let current_state = (state.clone(), extracted, total);
+        if last_state.as_ref() != Some(&current_state) {
+            last_progress = Instant::now();
+            last_state = Some(current_state);
+        }
         match classify_extract_state(&state) {
             ExtractState::Done => {
                 let url = result
