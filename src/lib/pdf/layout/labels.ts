@@ -90,7 +90,10 @@ export function isLayoutTranslatableKind(kind: PdfLayoutKind): boolean {
 
 /** Section / paper titles shown bold in the layout-translate overlay. */
 export function isLayoutTranslateHeadingKind(kind: PdfLayoutKind): boolean {
-	return kind === "header";
+	// Abstracts are semantic headings in the paper layout even though the
+	// detector reports them with a separate class. Keeping this role here makes
+	// every overlay consumer preserve the same hierarchy.
+	return kind === "header" || kind === "abstract";
 }
 
 /** Caption candidates merged into nearby figures/tables, not listed alone. */

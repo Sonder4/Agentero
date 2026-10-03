@@ -33,6 +33,7 @@ const LINE_HEIGHT = 1.25;
  * real browser metrics prove the text would otherwise be clipped.
  */
 const FS_MIN = 4;
+const HEADING_FS_MIN = 8;
 const FS_MAX = 20;
 const FIT_SAFETY = 0.97;
 const DOM_FIT_ABSOLUTE_MIN = 1;
@@ -181,6 +182,7 @@ export function fontSizeForLayoutTranslateBox(
 	pageHeightPx: number,
 	source: string,
 	translated?: string,
+	isHeading = false,
 ): number {
 	const padX = 4;
 	const padY = 3;
@@ -215,7 +217,7 @@ export function fontSizeForLayoutTranslateBox(
 		fs = Math.min(fitFs, Math.max(fs, h * 0.7));
 	}
 
-	return Math.max(FS_MIN, Math.min(FS_MAX, fs));
+	return Math.max(isHeading ? HEADING_FS_MIN : FS_MIN, Math.min(FS_MAX, fs));
 }
 
 /**
@@ -280,6 +282,7 @@ function fontSizeForLayoutTranslateItem(
 		pageHeightPx,
 		item.source,
 		text,
+		isLayoutTranslateHeadingKind(item.kind),
 	);
 	if (byText.size >= FONT_SIZE_CACHE_MAX_TEXTS) byText.clear();
 	byText.set(text, fontSize);
@@ -341,8 +344,12 @@ export const LayoutTranslateParagraph = memo(function LayoutTranslateParagraph({
 		}
 
 		let lo = DOM_FIT_ABSOLUTE_MIN;
+		const minimumReadableSize = isHeading
+			? HEADING_FS_MIN
+			: DOM_FIT_ABSOLUTE_MIN;
 		let hi = initialFontSize;
-		let best = DOM_FIT_ABSOLUTE_MIN;
+		let best = minimumReadableSize;
+		lo = Math.min(minimumReadableSize, hi);
 		applyParagraphMetrics(element, lo, lineHeight);
 
 		// An unbreakable URL / identifier can exceed the box at every readable
@@ -372,10 +379,10 @@ export const LayoutTranslateParagraph = memo(function LayoutTranslateParagraph({
 		}
 		applyParagraphMetrics(
 			element,
-			Math.max(DOM_FIT_ABSOLUTE_MIN, best * FIT_SAFETY),
+			Math.max(minimumReadableSize, best * FIT_SAFETY),
 			lineHeight,
 		);
-	}, [boxHeightPx, boxWidthPx, initialFontSize, text]);
+	}, [boxHeightPx, boxWidthPx, initialFontSize, isHeading, text]);
 
 	return (
 		<p
