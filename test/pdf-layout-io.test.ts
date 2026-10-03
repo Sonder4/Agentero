@@ -8,6 +8,12 @@ import {
 
 describe("layout sidecar", () => {
 	it("stores under the paper source folder", () => {
+		expect(layoutSidecarPath("C:\\vault\\papers\\loose.pdf")).toBe(
+			"C:\\vault\\papers\\loose\\source\\layout.json",
+		);
+		expect(layoutIndexPath("C:\\vault\\papers\\loose.pdf")).toBe(
+			"C:\\vault\\papers\\loose\\.src\\layout-index.json",
+		);
 		expect(layoutSidecarPath("/vault/papers/demo")).toBe(
 			"/vault/papers/demo/source/layout.json",
 		);

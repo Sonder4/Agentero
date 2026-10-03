@@ -117,14 +117,14 @@ function parseRegion(value: unknown): PdfLayoutRegion | null {
 
 export function layoutSidecarPath(paperAbsPath: string): string {
 	return joinVaultPath(
-		joinVaultPath(paperAbsPath, "source"),
+		joinVaultPath(paperAbsPath.replace(/\.pdf$/i, ""), "source"),
 		LAYOUT_SIDECAR_FILE,
 	);
 }
 
 export function layoutIndexPath(paperAbsPath: string): string {
 	return joinVaultPath(
-		joinVaultPath(paperAbsPath, ".src"),
+		joinVaultPath(paperAbsPath.replace(/\.pdf$/i, ""), ".src"),
 		// `layout.json` is the raw model output and stays under `source/`.
 		// The sidebar index is a rebuildable Agentero artifact, so keep it in
 		// the paper's hidden generated-data directory instead of mixing it with

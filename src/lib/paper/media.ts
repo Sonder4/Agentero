@@ -120,6 +120,9 @@ export async function findLocalPdfPath(
 ): Promise<string | null> {
 	if (!isTauri() || !paperDir?.trim()) return null;
 	const root = paperDir.replace(/[/\\]+$/, "");
+	// A loose PDF is its own source. Enumerating its parent could pick a
+	// different paper from the same topic folder.
+	if (PDF_NAME_RE.test(root)) return root;
 	// Remote joined path: list via Host SFTP
 	const parsed = parseRemoteJoinedPath(root);
 	if (parsed) {

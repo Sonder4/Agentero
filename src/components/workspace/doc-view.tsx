@@ -25,6 +25,7 @@ function paperAbsPathForTab(tab: DocTab): string | null {
 		return tab.notesPath.replace(/[\\/]NOTES\.md$/i, "");
 	}
 	if (tab.path && isUnderPapers(tab.path) && /\.pdf$/i.test(tab.path)) {
+		// Preserve the exact loose PDF; its topic folder can contain many papers.
 		return tab.path;
 	}
 	return null;
