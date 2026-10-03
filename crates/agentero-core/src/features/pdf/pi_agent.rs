@@ -66,7 +66,9 @@ pub async fn translate_with_pi(prompt: &str, cwd: &Path) -> Result<String, AppEr
         stderr.read_to_end(&mut bytes).await.map(|_| bytes)
     });
     let status = match timeout(PI_TIMEOUT, child.wait()).await {
-        Ok(result) => result.map_err(|e| AppError::message(format!("pi translation failed: {e}")))?,
+        Ok(result) => {
+            result.map_err(|e| AppError::message(format!("pi translation failed: {e}")))?
+        }
         Err(_) => {
             let _ = child.kill().await;
             let _ = child.wait().await;
@@ -89,9 +91,7 @@ pub async fn translate_with_pi(prompt: &str, cwd: &Path) -> Result<String, AppEr
         let stderr = String::from_utf8_lossy(&stderr);
         let tail = stderr.chars().rev().take(400).collect::<String>();
         let tail = tail.chars().rev().collect::<String>();
-        return Err(AppError::message(format!(
-            "pi exited {status}: {tail}"
-        )));
+        return Err(AppError::message(format!("pi exited {status}: {tail}")));
     }
     parse_pi_text(&stdout)
 }
@@ -159,7 +159,9 @@ fn parse_pi_text(stdout: &[u8]) -> Result<String, AppError> {
     if !last.is_empty() {
         Ok(last)
     } else if !last_error.is_empty() {
-        Err(AppError::message(format!("pi translation error: {last_error}")))
+        Err(AppError::message(format!(
+            "pi translation error: {last_error}"
+        )))
     } else {
         Err(AppError::message("pi returned no translation"))
     }

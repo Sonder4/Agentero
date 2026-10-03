@@ -175,7 +175,8 @@ fn extract_regions(pdf: &[u8]) -> Result<(Vec<Region>, u32), AppError> {
             let Some(box_) = ch.char_box() else {
                 continue;
             };
-            let Some(glyph) = glyph_in_viewport(&page, &view_box, page_width, page_height, unicode, &box_)
+            let Some(glyph) =
+                glyph_in_viewport(&page, &view_box, page_width, page_height, unicode, &box_)
             else {
                 continue;
             };
@@ -297,7 +298,9 @@ fn split_line_columns(glyphs: Vec<Glyph>) -> Vec<Vec<Glyph>> {
             gaps.push((index, gap));
         }
     }
-    let Some(&(cut, _)) = gaps.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    let Some(&(cut, _)) = gaps
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     else {
         return vec![glyphs];
     };
@@ -495,14 +498,22 @@ mod tests {
 
     #[test]
     fn classifies_abstract_caption_and_heading() {
-        assert_eq!(classify_block("Abstract We study", 40.0, 12.0, 800.0), "abstract");
+        assert_eq!(
+            classify_block("Abstract We study", 40.0, 12.0, 800.0),
+            "abstract"
+        );
         assert_eq!(
             classify_block("Figure 2: results on the benchmark.", 500.0, 10.0, 800.0),
             "figure_title"
         );
         assert_eq!(classify_block("Introduction", 70.0, 16.0, 800.0), "header");
         assert_eq!(
-            classify_block("This sentence continues the paragraph and ends.", 200.0, 11.0, 800.0),
+            classify_block(
+                "This sentence continues the paragraph and ends.",
+                200.0,
+                11.0,
+                800.0
+            ),
             "text"
         );
     }
