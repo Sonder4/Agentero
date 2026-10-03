@@ -75,6 +75,8 @@ Mark id 是 nanoid，字母表含 `-`，约 1/64 的 id 以 `-` 开头。`mark g
 
 ### 整库版面解析与全文翻译
 
+CLI 与桌面使用同一论文目录及 `.src/layout-translate.json`。缓存严格保留 provider / 语言 / serviceKey 身份；单篇结果的 `translated`、`failed`、`skipped` 应一同检查，不能把命令退出成功当成全部译完。数学重音碎片跳过原因记录于 `skippedRegions`；桌面兼容 CLI 的原始 PDF 文字，经相同归一化比较后加载。见 [翻译缓存契约](translate.md#cli-与桌面缓存契约)。
+
 `layout analyze` 用 PDFium 文字层按阅读顺序抽出正文 / 标题 / 图题块，写入桌面同一套 sidecar：`{paper}/source/layout.json` 与 `{paper}/.src/layout-index.json`。已有 sidecar 默认复用，`--force` 才重写。这是文字层重建，不跑桌面 WebView 里的 PP-DocLayoutV3；扫描版页面没有文字层时该页为空。
 
 `layout translate` 先确保版面 sidecar 存在。默认 `--provider agent` 调用本机 Pi agent（`pi --mode json`，不覆盖 provider / model，因此使用 Pi 配置里的默认 provider 和模型）；也可通过 `--provider google`、`googleapi`、`deeplx`、`huoshanweb` 或 `tencenttransmart` 使用对应的内置翻译服务。`AGENTERO_TRANSLATE_PROVIDER` 可作为默认 provider。工具、扩展和仓库 AGENTS.md 都不加载。`--jobs` 控制并发请求数（1–8，默认 4）。每个 Pi 请求最多运行 180 秒，超时会主动终止并回收子进程。缓存按 provider、语言和原文命中；`--force` 忽略旧译文。

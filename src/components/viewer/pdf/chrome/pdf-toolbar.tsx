@@ -243,61 +243,71 @@ export function PdfToolbar({
 						</Tooltip>
 					) : null}
 					{!isRemotePaper ? (
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									type="button"
-									size="icon-xs"
-									variant={
-										layoutTranslateActive ||
-										layoutTranslateWaiting ||
-										longPressing
-											? "secondary"
-											: "ghost"
-									}
-									className="shrink-0 self-center"
-									data-full-text-translate
-									aria-label={
-										latexTranslateRunning
-											? i18n.t("viewer:pdf.latexTranslation.translating")
-											: layoutTranslateAriaLabel
-									}
-									aria-pressed={
-										layoutTranslateActive ||
-										layoutTranslateWaiting ||
-										latexTranslateRunning
-									}
-									disabled={!engine || latexTranslateRunning}
-									onPointerDown={handleTranslatePointerDown}
-									onPointerUp={handleTranslatePointerUp}
-									onPointerLeave={handleTranslatePointerLeave}
-									onPointerCancel={handleTranslatePointerLeave}
-									onClick={handleTranslateClick}
-								>
-									{layoutTranslateWaiting ? (
-										<Clock className="size-3.5 animate-pulse" aria-hidden />
-									) : anyTranslateRunning && !longPressing ? (
-										<Loader2 className="size-3.5 animate-spin" aria-hidden />
-									) : (
-										<Languages className="size-3.5" aria-hidden />
-									)}
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="bottom">
-								{latexTranslateRunning
-									? i18n.t("viewer:pdf.latexTranslation.translating")
-									: layoutTranslateLabel}
-								{!latexTranslateRunning && layoutTranslateProgressLabel ? (
-									<span className="ml-1 text-background/80">
-										· {layoutTranslateProgressLabel}
+						<>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										type="button"
+										size="icon-xs"
+										variant={
+											layoutTranslateActive ||
+											layoutTranslateWaiting ||
+											longPressing
+												? "secondary"
+												: "ghost"
+										}
+										className="shrink-0 self-center"
+										data-full-text-translate
+										aria-label={
+											latexTranslateRunning
+												? i18n.t("viewer:pdf.latexTranslation.translating")
+												: layoutTranslateAriaLabel
+										}
+										aria-pressed={
+											layoutTranslateActive ||
+											layoutTranslateWaiting ||
+											latexTranslateRunning
+										}
+										disabled={!engine || latexTranslateRunning}
+										onPointerDown={handleTranslatePointerDown}
+										onPointerUp={handleTranslatePointerUp}
+										onPointerLeave={handleTranslatePointerLeave}
+										onPointerCancel={handleTranslatePointerLeave}
+										onClick={handleTranslateClick}
+									>
+										{layoutTranslateWaiting ? (
+											<Clock className="size-3.5 animate-pulse" aria-hidden />
+										) : anyTranslateRunning && !longPressing ? (
+											<Loader2 className="size-3.5 animate-spin" aria-hidden />
+										) : (
+											<Languages className="size-3.5" aria-hidden />
+										)}
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent side="bottom">
+									{latexTranslateRunning
+										? i18n.t("viewer:pdf.latexTranslation.translating")
+										: layoutTranslateLabel}
+									{!latexTranslateRunning && layoutTranslateProgressLabel ? (
+										<span className="ml-1 text-background/80">
+											· {layoutTranslateProgressLabel}
+										</span>
+									) : null}
+									{/* Inverted tooltip: mute via text-background, not muted-foreground. */}
+									<span className="ml-2 text-background/70">
+										{formatShortcutById("layoutTranslate")}
 									</span>
-								) : null}
-								{/* Inverted tooltip: mute via text-background, not muted-foreground. */}
-								<span className="ml-2 text-background/70">
-									{formatShortcutById("layoutTranslate")}
+								</TooltipContent>
+							</Tooltip>
+							{!latexTranslateRunning && layoutTranslateProgressLabel ? (
+								<span
+									data-full-text-translate-progress
+									className="max-w-44 truncate px-1 text-[10px] tabular-nums text-muted-foreground"
+								>
+									{layoutTranslateProgressLabel}
 								</span>
-							</TooltipContent>
-						</Tooltip>
+							) : null}
+						</>
 					) : null}
 					{!isRemotePaper && onSmartHighlight ? (
 						<Tooltip>

@@ -903,11 +903,7 @@ export function usePdfLayoutTranslate({
 				if (cancelled) return;
 				setLayoutTranslateCacheReady(true);
 				setLayoutTranslateJob((prev) => {
-					if (
-						prev.status === "running" ||
-						prev.status === "waitingLayout" ||
-						prev.items.some((item) => item.translated?.trim())
-					) {
+					if (prev.status === "running" || prev.status === "waitingLayout") {
 						return prev;
 					}
 					return {

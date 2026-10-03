@@ -64,7 +64,7 @@ import { joinVaultPath, readVaultFile, writeVaultFile } from "@/lib/vault";
 
 const AGENT_TRANSLATION_TIMEOUT_MS = 180_000;
 const AGENT_RETRY_LOG_RE =
-	/Retrying\s*\(attempt\s*\d+\s*\/\s*\d+\s*,\s*waiting\s*\d+s\)\s*\.\.\.|Retry\s+finished,\s*resuming\.?/gi;
+	/Retrying\s*(?:\(attempt\s*\d+\s*\/\s*\d+\s*,\s*waiting\s*\d+s\))?\s*\.\.\.|Retry\s+finished,\s*resuming\.?/gi;
 
 /** Remove ACP/provider retry chatter accidentally surfaced as assistant text. */
 export function sanitizeAgentTranslationText(value: string): string {
@@ -241,6 +241,11 @@ export function isReferenceSectionTitle(text: string): boolean {
 	return /^(references?|bibliography|works\s+cited|参考文[献獻])\b/i.test(t);
 }
 
+/** A detached math accent misclassified as a heading, e.g. `b ¯`. */
+export function isMathAccentFragment(text: string): boolean {
+	return /^[A-Za-zα-ωΑ-Ω]\s*(?:¯|ˆ|ˇ|˙|˜|[\u0300-\u036f])+$/u.test(text.trim());
+}
+
 /**
  * Reading-order list of regions with extractable source text
  * (body, abstract, headers, figure/table captions).
@@ -276,6 +281,7 @@ export function listTranslatableLayoutRegions(
 		if (!full) continue;
 		if (isAlgorithmTitleText(full)) continue;
 		if (isReferenceSectionTitle(full)) continue;
+		if (r.kind === "header" && isMathAccentFragment(full)) continue;
 		const source =
 			full.length > LAYOUT_TRANSLATE_MAX_CHARS
 				? `${full.slice(0, LAYOUT_TRANSLATE_MAX_CHARS)}…`
@@ -346,6 +352,9 @@ function promptFingerprint(prompt: string): string {
 export function translateServiceKey(settings: TranslateSettings): string {
 	const providerId = settings.provider;
 	const promptPart =
+		(providerId === "agent" ||
+			providerId === "openaiCompatible" ||
+			providerId === "agentero") &&
 		settings.customPrompt.trim().length > 0
 			? `:p${promptFingerprint(settings.customPrompt)}`
 			: "";
@@ -504,7 +513,14 @@ export function applyLayoutTranslateSidecar(
 	const byId = new Map(sidecar.items.map((item) => [item.id, item]));
 	return items.map((item) => {
 		const cached = byId.get(item.id);
-		if (!cached || cached.source !== item.source) return { ...item };
+		// CLI sidecars retain the raw PDF extract; the viewer heals ligatures,
+		// broken words and running stamps before forming translation units.
+		if (
+			!cached ||
+			cached.pageIndex !== item.pageIndex ||
+			normalizeLayoutSourceText(cached.source, item.kind) !== item.source
+		)
+			return { ...item };
 		return {
 			...item,
 			status: "done" as const,
@@ -529,17 +545,22 @@ export async function writeLayoutTranslateSidecar(
 	await enqueueTranslateSidecarWrite(paperAbsPath, async () => {
 		const done = items
 			.filter((item) => item.status === "done" && item.translated?.trim())
-			.map(
-				(item): LayoutTranslateSidecarItem => ({
+			.map((item): LayoutTranslateSidecarItem | null => {
+				const translated = sanitizeAgentTranslationText(
+					item.translated?.trim() ?? "",
+				);
+				if (!translated) return null;
+				return {
 					id: item.id,
 					pageIndex: item.pageIndex,
 					bbox: item.bbox,
 					kind: item.kind,
 					readingOrder: item.readingOrder,
 					source: item.source,
-					translated: item.translated?.trim() ?? "",
-				}),
-			);
+					translated,
+				};
+			})
+			.filter((item): item is LayoutTranslateSidecarItem => item !== null);
 		const merged = new Map<string, LayoutTranslateSidecarItem>();
 		if (options.preserveExisting) {
 			const existing = await readLayoutTranslateSidecar(paperAbsPath, key);
@@ -1135,8 +1156,9 @@ export async function runLayoutRegionTranslate(options: {
 		);
 		chain.members.forEach((member, i) => {
 			const segment = segments[i]?.trim();
-			if (segment) {
-				member.translated = segment;
+			const cleanSegment = segment ? sanitizeAgentTranslationText(segment) : "";
+			if (cleanSegment) {
+				member.translated = cleanSegment;
 				member.status = "done";
 			} else {
 				member.status = "error";

@@ -95,6 +95,48 @@ describe("layout translation agent lifecycle", () => {
 		expect(result[0]?.status).toBe("done");
 	});
 
+	it("keeps ACP retry status out of the completed translation", async () => {
+		runOnce.mockImplementation(async () => {
+			completedListeners.at(-1)?.({
+				sessionId: "session-retry",
+				content: "Retrying...Retry finished, resuming.你好",
+				stopReason: "end_turn",
+			});
+			return {
+				sessionId: "session-retry",
+				messageId: "message-retry",
+				agentId: "agent-1",
+			};
+		});
+		const result = await runLayoutRegionTranslate({
+			items: [item()],
+			onUpdate: () => {},
+		});
+		expect(result[0]?.translated).toBe("你好");
+		expect(result[0]?.status).toBe("done");
+	});
+
+	it("reports an ACP result containing only retry status as a failure", async () => {
+		runOnce.mockImplementation(async () => {
+			completedListeners.at(-1)?.({
+				sessionId: "session-empty-retry",
+				content: "Retrying...Retry finished, resuming.",
+				stopReason: "end_turn",
+			});
+			return {
+				sessionId: "session-empty-retry",
+				messageId: "message-retry",
+				agentId: "agent-1",
+			};
+		});
+		const result = await runLayoutRegionTranslate({
+			items: [item()],
+			onUpdate: () => {},
+		});
+		expect(result[0]?.translated).toBeUndefined();
+		expect(result[0]?.status).toBe("error");
+	});
+
 	it("cancels the accepted agent session when aborted", async () => {
 		const controller = new AbortController();
 		runOnce.mockResolvedValue({

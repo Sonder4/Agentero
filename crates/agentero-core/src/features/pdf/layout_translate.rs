@@ -37,6 +37,7 @@ pub struct LayoutTranslateOutcome {
     pub from_cache: bool,
     pub translated: usize,
     pub skipped: usize,
+    pub skipped_regions: Vec<Value>,
     pub failed: usize,
     pub provider: String,
     pub target_lang: String,
@@ -107,6 +108,7 @@ pub async fn translate_paper_dir(
             target_lang,
             &service_key,
             &[],
+            &[],
         )?;
         return Ok(Some(empty_outcome(
             paper_rel,
@@ -132,7 +134,16 @@ pub async fn translate_paper_dir(
     let mut translated = Vec::new();
     let mut pending = Vec::new();
     let mut skipped = 0usize;
+    let mut skipped_regions = Vec::new();
     for unit in units {
+        if unit.kind == "header" && is_math_accent_fragment(&unit.source) {
+            skipped += 1;
+            skipped_regions.push(json!({
+                "id": unit.id, "pageIndex": unit.page_index,
+                "source": unit.source, "reason": "math-accent-fragment",
+            }));
+            continue;
+        }
         if is_chinese_target(target_lang)
             && crate::features::translate::looks_mostly_cjk(&unit.source)
         {
@@ -157,12 +168,14 @@ pub async fn translate_paper_dir(
             target_lang,
             &service_key,
             &translated,
+            &skipped_regions,
         )?;
         return Ok(Some(LayoutTranslateOutcome {
             paper_path: paper_rel.to_string(),
             from_cache: true,
             translated: translated.len(),
             skipped,
+            skipped_regions,
             failed: 0,
             provider: provider_id,
             target_lang: target_lang.to_string(),
@@ -255,12 +268,14 @@ pub async fn translate_paper_dir(
         target_lang,
         &service_key,
         &translated,
+        &skipped_regions,
     )?;
     Ok(Some(LayoutTranslateOutcome {
         paper_path: paper_rel.to_string(),
         from_cache: false,
         translated: translated.len(),
         skipped,
+        skipped_regions,
         failed,
         provider: provider_id,
         target_lang: target_lang.to_string(),
@@ -284,6 +299,7 @@ fn empty_outcome(
         from_cache,
         translated: 0,
         skipped: 0,
+        skipped_regions: Vec::new(),
         failed: 0,
         provider: provider.to_string(),
         target_lang: target.to_string(),
@@ -365,11 +381,13 @@ fn load_cache(
             .and_then(|s| s.get("serviceKey"))
             .and_then(Value::as_str)
             == Some(service_key);
-    // Public MT providers are interchangeable for cache purposes when the
-    // source/target pair matches; this lets a healthy provider repair a partial
-    // sidecar left by a rate-limited provider without retranslating 70k blocks.
-    let fallback_matches = provider != "agent" && language_matches;
-    if !exact_matches && !fallback_matches {
+    // The file-level source describes every item. Reusing another provider's
+    // result here would relabel old translations as the newly selected service.
+    if raw.get("schemaVersion").and_then(Value::as_u64) != Some(TRANSLATE_SCHEMA)
+        || source.and_then(|s| s.get("mode")).and_then(Value::as_str)
+            != Some("pdf-layout-translate")
+        || !exact_matches
+    {
         return Vec::new();
     }
     raw.get("items")
@@ -636,6 +654,7 @@ fn write_sidecar(
     target_lang: &str,
     service_key: &str,
     items: &[Value],
+    skipped_regions: &[Value],
 ) -> Result<(), AppError> {
     let generated_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let sidecar = json!({
@@ -649,9 +668,76 @@ fn write_sidecar(
             "serviceKey": service_key,
         },
         "items": items,
+        "skippedRegions": skipped_regions,
     });
     let dir = paper_dir.join(".src");
     fs::create_dir_all(&dir)?;
     json_store(&dir.join("layout-translate.json"), &sidecar)?;
     Ok(())
+}
+
+fn is_math_accent_fragment(text: &str) -> bool {
+    let mut chars = text.trim().chars().filter(|c| !c.is_whitespace());
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic()
+        || ('α'..='ω').contains(&first)
+        || ('Α'..='Ω').contains(&first))
+    {
+        return false;
+    }
+    let accents: Vec<char> = chars.collect();
+    !accents.is_empty()
+        && accents.iter().all(|c| {
+            matches!(c, '¯' | 'ˆ' | 'ˇ' | '˙' | '˜') || ('\u{0300}'..='\u{036f}').contains(c)
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skips_detached_math_accents_without_skipping_short_headings() {
+        assert!(is_math_accent_fragment("b ¯"));
+        assert!(is_math_accent_fragment("θ\u{0304}"));
+        assert!(!is_math_accent_fragment("AI"));
+        assert!(!is_math_accent_fragment("1 Introduction"));
+        assert!(!is_math_accent_fragment("bias b ¯"));
+    }
+
+    #[test]
+    fn cache_requires_real_provider_and_language_identity() {
+        let dir =
+            std::env::temp_dir().join(format!("agentero-translate-cache-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cache.json");
+        fs::write(
+            &path,
+            json!({
+                "schemaVersion": 1,
+                "source": {"mode": "pdf-layout-translate", "providerId": "tencenttransmart",
+                    "sourceLang": "auto", "targetLang": "zh-CN", "serviceKey": "tencenttransmart"},
+                "items": [{"id": "a", "source": "Hello", "translated": "你好"}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            load_cache(
+                &path,
+                "tencenttransmart",
+                "auto",
+                "zh-CN",
+                "tencenttransmart"
+            )
+            .len(),
+            1
+        );
+        assert!(load_cache(&path, "googleapi", "auto", "zh-CN", "googleapi").is_empty());
+        assert!(load_cache(&path, "tencenttransmart", "auto", "en", "tencenttransmart").is_empty());
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
 }

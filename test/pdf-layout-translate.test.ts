@@ -20,6 +20,7 @@ import {
 	sanitizeAgentTranslationText,
 	toLayoutTranslateItems,
 	translateServiceKey,
+	writeLayoutTranslateSidecar,
 } from "@/lib/pdf/layout/layout-translate";
 import {
 	glossaryContentHash,
@@ -38,6 +39,11 @@ vi.mock("@/lib/vault", () => ({
 }));
 
 describe("sanitizeAgentTranslationText", () => {
+	it("rejects bare retry status as translation content", () => {
+		expect(
+			sanitizeAgentTranslationText("Retrying...\nRetry finished, resuming."),
+		).toBe("");
+	});
 	it("removes provider retry chatter without changing translation text", () => {
 		expect(
 			sanitizeAgentTranslationText(
@@ -70,6 +76,13 @@ function region(
 }
 
 describe("listTranslatableLayoutRegions", () => {
+	it("keeps short headings but leaves detached mathematical accents in the source PDF", () => {
+		const list = listTranslatableLayoutRegions([
+			region({ id: "fragment", kind: "header", pageIndex: 8, text: "b ¯" }),
+			region({ id: "heading", kind: "header", pageIndex: 8, text: "AI" }),
+		]);
+		expect(list.map((item) => item.id)).toEqual(["heading"]);
+	});
 	it("keeps body text / abstract / header with extractable text in reading order", () => {
 		const list = listTranslatableLayoutRegions([
 			region({
@@ -453,6 +466,56 @@ describe("layout translate sidecar cache", () => {
 		};
 	}
 
+	it("cleans retry status at the sidecar write boundary and omits status-only results", async () => {
+		const vault = await import("@/lib/vault");
+		vi.mocked(vault.writeVaultFile).mockReset();
+		await writeLayoutTranslateSidecar("/vault/paper", key, [
+			{
+				...item("a"),
+				status: "done",
+				translated: "Retrying...Retry finished, resuming.甲",
+			},
+			{ ...item("b"), status: "done", translated: "Retrying..." },
+		]);
+		const written = JSON.parse(
+			vi.mocked(vault.writeVaultFile).mock.calls[0]?.[1] ?? "{}",
+		);
+		expect(written.items).toHaveLength(1);
+		expect(written.items[0]).toMatchObject({ id: "a", translated: "甲" });
+	});
+
+	it("loads CLI raw extracts after the same source cleanup but rejects changed prose or pages", () => {
+		const cached = {
+			...item("a", "A repre- sentation."),
+			translated: "一种表示。",
+		};
+		const sidecar = {
+			schemaVersion: 1,
+			source: {
+				...key,
+				mode: "pdf-layout-translate" as const,
+				generatedAt: "2026-10-03T00:00:00Z",
+			},
+			items: [cached],
+		};
+		expect(
+			applyLayoutTranslateSidecar([item("a", "A representation.")], sidecar)[0]
+				?.status,
+		).toBe("done");
+		expect(
+			applyLayoutTranslateSidecar(
+				[item("a", "A different representation.")],
+				sidecar,
+			)[0]?.status,
+		).toBe("pending");
+		expect(
+			applyLayoutTranslateSidecar(
+				[{ ...item("a", "A representation."), pageIndex: 1 }],
+				sidecar,
+			)[0]?.status,
+		).toBe("pending");
+	});
+
 	it("applies cached translations only when key and source text match", () => {
 		const sidecar = parseLayoutTranslateSidecar(
 			{
@@ -590,15 +653,16 @@ describe("persistLayoutTranslateSidecarBestEffort debounce", () => {
 describe("translateServiceKey custom prompt fingerprint", () => {
 	const base = {
 		...DEFAULT_TRANSLATE_SETTINGS,
-		provider: "googleapi" as const,
+		provider: "openaiCompatible" as const,
+		providerConfigs: {},
 	};
 
 	it("empty prompt keeps the prompt-less key byte-identical", () => {
 		expect(translateServiceKey({ ...base, customPrompt: "" })).toBe(
-			"googleapi",
+			"openaiCompatible",
 		);
 		expect(translateServiceKey({ ...base, customPrompt: "   " })).toBe(
-			"googleapi",
+			"openaiCompatible",
 		);
 	});
 
@@ -606,9 +670,19 @@ describe("translateServiceKey custom prompt fingerprint", () => {
 		const a = translateServiceKey({ ...base, customPrompt: "Be terse." });
 		const b = translateServiceKey({ ...base, customPrompt: "Be terse." });
 		const c = translateServiceKey({ ...base, customPrompt: "Be verbose." });
-		expect(a).not.toBe("googleapi");
+		expect(a).not.toBe("openaiCompatible");
 		expect(a).toBe(b);
 		expect(a).not.toBe(c);
+	});
+
+	it("ignores prompts unused by free MT so desktop keys match the CLI", () => {
+		expect(
+			translateServiceKey({
+				...base,
+				provider: "tencenttransmart",
+				customPrompt: "Be terse.",
+			}),
+		).toBe("tencenttransmart");
 	});
 
 	it("works for the agent provider too", () => {
