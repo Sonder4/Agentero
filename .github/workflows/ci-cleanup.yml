@@ -1,0 +1,64 @@
+name: CI Cleanup
+
+# Runs after every CI completion (success, failure, or cancellation) and on
+# demand. Keeps GitHub Actions storage bounded: removes artifacts left by the
+# finished run, purges caches older than one week, and keeps the newest 20 CI
+# runs while deleting older completed runs.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ci-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cleanup CI storage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete artifacts from the finished CI run
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[].id' | while read -r id; do
+              [ -n "$id" ] && gh api -X DELETE "repos/$REPO/actions/artifacts/$id" || true
+            done
+
+      - name: Delete caches older than 7 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cutoff="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          gh cache list -R "$REPO" --limit 100 --json id,createdAt \
+            --jq ".[] | select(.createdAt < \"$cutoff\") | .id" |
+            while read -r id; do
+              [ -n "$id" ] && gh cache delete "$id" -R "$REPO" || true
+            done
+
+      - name: Keep only the newest 20 completed CI runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run list -R "$REPO" --workflow CI --limit 100 \
+            --json databaseId,createdAt,status \
+            --jq 'sort_by(.createdAt) | reverse | .[20:] | .[] | select(.status == "completed") | .databaseId' |
+            while read -r id; do
+              [ -n "$id" ] && gh api -X DELETE "repos/$REPO/actions/runs/$id" || true
+            done
+
